@@ -20,7 +20,7 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
-from config_local import SUPABASE_URL, SUPABASE_KEY, GEMINI_KEY
+from config_local import SUPABASE_URL, SUPABASE_KEY, GEMINI_KEY, SUPABASE_ANON_KEY
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
@@ -162,6 +162,47 @@ Retorne SEMPRE um array JSON puro [ { ... } ]. Sem markdown nem comentários."""
         except:
             pass
 
+
+# ---------------------------------------------------------------------------
+# Autenticação: o navegador entra pelo Supabase Auth e manda o token em
+# "Authorization: Bearer". Aqui o token é validado e o cliente é achado pelo
+# e-mail (tabela clientes). Cada usuário só enxerga os dados do próprio cliente.
+# ---------------------------------------------------------------------------
+_CACHE_SESSAO = {}  # token -> (expira_em, cliente)
+
+def cliente_do_token(token):
+    """Retorna (cliente, erro). erro = (status, mensagem) ou None."""
+    agora = time.time()
+    em_cache = _CACHE_SESSAO.get(token)
+    if em_cache and em_cache[0] > agora:
+        return em_cache[1], None
+    try:
+        req = urllib.request.Request(f"{SUPABASE_URL}/auth/v1/user", headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            usuario = json.loads(r.read().decode())
+    except urllib.error.HTTPError:
+        return None, (401, "Sessão inválida ou expirada. Entre de novo.")
+    except Exception:
+        return None, (503, "Não foi possível validar o login agora. Tente de novo.")
+
+    email = str(usuario.get("email") or "").strip().lower()
+    if not email or not usuario.get("email_confirmed_at"):
+        return None, (401, "E-mail ainda não confirmado.")
+    try:
+        req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/clientes?email=eq.{urllib.parse.quote(email)}&ativo=eq.true&select=id,nome,email", headers=HEADERS_SUPABASE)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            achados = json.loads(r.read().decode())
+    except Exception:
+        return None, (503, "Não foi possível consultar o cadastro agora. Tente de novo.")
+    if not achados:
+        return None, (403, "Seu acesso ainda não foi liberado. Fale com o administrador.")
+    cliente = achados[0]
+    _CACHE_SESSAO[token] = (agora + 60, cliente)
+    return cliente, None
+
+def filtro_cliente(cliente):
+    return "cliente=eq." + urllib.parse.quote(cliente["nome"])
+
 class DevHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -176,6 +217,18 @@ class DevHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def autenticar(self):
+        """Valida o login desta requisição. Responde 401/403 e devolve None se não puder seguir."""
+        cab = self.headers.get("Authorization", "")
+        if not cab.startswith("Bearer ") or len(cab) < 20:
+            self.responder_json(401, {"erro": "Entre para continuar."})
+            return None
+        cliente, erro = cliente_do_token(cab[7:].strip())
+        if erro:
+            self.responder_json(erro[0], {"erro": erro[1]})
+            return None
+        return cliente
+
     def responder_json(self, status_code, dados):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -185,19 +238,21 @@ class DevHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         url_path = self.path.split("?")[0]
 
-        # 1. Clientes Reais (Item 3)
-        if url_path == "/api/clientes":
-            try:
-                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/clientes?order=nome.asc", headers=HEADERS_SUPABASE)
-                with urllib.request.urlopen(req) as resp:
-                    clientes = json.loads(resp.read().decode())
-                self.responder_json(200, clientes)
-            except Exception as e:
-                # Fallback se schema_v2 ainda não foi executado no Supabase
-                self.responder_json(200, [
-                    {"nome": "Wal Salgados", "documento": "CNPJ Cadastrado"},
-                    {"nome": "André Buffet", "documento": "CNPJ Cadastrado"}
-                ])
+        # Configuração pública para o login (URL e chave anon são públicas por natureza)
+        if url_path == "/api/config":
+            self.responder_json(200, {"supabaseUrl": SUPABASE_URL, "anonKey": SUPABASE_ANON_KEY})
+            return
+
+        # Tudo em /api/ exige login; o cliente vem do usuário, nunca do navegador
+        cliente_logado = None
+        if url_path.startswith("/api/"):
+            cliente_logado = self.autenticar()
+            if not cliente_logado:
+                return
+
+        # 1. Quem sou eu (cliente do usuário logado)
+        if url_path == "/api/eu":
+            self.responder_json(200, {"nome": cliente_logado["nome"], "email": cliente_logado["email"]})
             return
 
         # 2. Categorias (Item 5.2)
@@ -224,7 +279,7 @@ class DevHandler(BaseHTTPRequestHandler):
         if url_path == "/api/novas-entradas":
             try:
                 # Buscar lançamentos com status novo ou revisar
-                url = f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?order=criado_em.desc&limit=50"
+                url = f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?{filtro_cliente(cliente_logado)}&order=criado_em.desc&limit=1000"
                 req = urllib.request.Request(url, headers=HEADERS_SUPABASE)
                 with urllib.request.urlopen(req) as resp:
                     itens = json.loads(resp.read().decode())
@@ -236,7 +291,7 @@ class DevHandler(BaseHTTPRequestHandler):
         # 4. Fila de Processamento (Item 4)
         if url_path == "/api/processamento-fila":
             try:
-                url = f"{SUPABASE_URL}/rest/v1/cupons_fila?order=criado_em.desc&limit=20"
+                url = f"{SUPABASE_URL}/rest/v1/cupons_fila?{filtro_cliente(cliente_logado)}&order=criado_em.desc&limit=200"
                 req = urllib.request.Request(url, headers=HEADERS_SUPABASE)
                 with urllib.request.urlopen(req) as resp:
                     fila = json.loads(resp.read().decode())
@@ -249,8 +304,9 @@ class DevHandler(BaseHTTPRequestHandler):
         if url_path == "/api/imagem-cupom":
             params = urllib.parse.parse_qs(self.path.split("?")[1] if "?" in self.path else "")
             caminho = params.get("path", [""])[0]
-            if not caminho:
-                self.send_response(400)
+            # Só imagens da pasta do próprio cliente
+            if not caminho or ".." in caminho or not caminho.startswith(slug_cliente(cliente_logado["nome"]) + "/"):
+                self.send_response(404)
                 self.end_headers()
                 return
             try:
@@ -260,7 +316,7 @@ class DevHandler(BaseHTTPRequestHandler):
                     img_bytes = r_st.read()
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
-                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("Cache-Control", "private, max-age=3600")
                 self.end_headers()
                 self.wfile.write(img_bytes)
             except Exception as e:
@@ -271,7 +327,7 @@ class DevHandler(BaseHTTPRequestHandler):
         # 5. Dashboard Stats (Item 5.4)
         if url_path == "/api/dashboard-stats":
             try:
-                url = f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?order=criado_em.desc"
+                url = f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?{filtro_cliente(cliente_logado)}&order=criado_em.desc"
                 req = urllib.request.Request(url, headers=HEADERS_SUPABASE)
                 with urllib.request.urlopen(req) as resp:
                     todos = json.loads(resp.read().decode())
@@ -330,23 +386,9 @@ class DevHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         url_path = self.path.split("?")[0]
 
-        # Cadastro de Novo Cliente Real (Item 3)
-        if url_path == "/api/clientes":
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(content_length).decode())
-            nome = body.get("nome", "").strip()
-            doc = body.get("documento", "").strip()
-            if not nome:
-                self.responder_json(400, {"erro": "Nome do cliente é obrigatório."})
-                return
-            try:
-                payload = {"nome": nome, "documento": doc or None}
-                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/clientes", data=json.dumps(payload).encode(), headers={**HEADERS_SUPABASE, "Prefer": "return=representation"}, method="POST")
-                with urllib.request.urlopen(req) as resp:
-                    criado = json.loads(resp.read().decode())[0]
-                self.responder_json(201, criado)
-            except Exception as e:
-                self.responder_json(500, {"erro": str(e)})
+        # Tudo em /api/ exige login
+        cliente_logado = self.autenticar()
+        if not cliente_logado:
             return
 
         # Confirmar entrada (Item 5.3)
@@ -358,9 +400,12 @@ class DevHandler(BaseHTTPRequestHandler):
             try:
                 patch_data = {"status_revisao": "confirmado", "revisado_em": datetime.datetime.now().isoformat()}
                 if nova_cat: patch_data["categoria"] = nova_cat
-                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?id=eq.{entrada_id}", data=json.dumps(patch_data).encode(), headers=HEADERS_SUPABASE, method="PATCH")
-                with urllib.request.urlopen(req):
-                    pass
+                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?id=eq.{urllib.parse.quote(str(entrada_id))}&{filtro_cliente(cliente_logado)}", data=json.dumps(patch_data).encode(), headers={**HEADERS_SUPABASE, "Prefer": "return=representation"}, method="PATCH")
+                with urllib.request.urlopen(req) as resp_conf:
+                    alterados = json.loads(resp_conf.read().decode() or "[]")
+                if not alterados:
+                    self.responder_json(404, {"erro": "Lançamento não encontrado."})
+                    return
                 self.responder_json(200, {"mensagem": "Entrada confirmada com sucesso!"})
             except Exception as e:
                 self.responder_json(500, {"erro": str(e)})
@@ -382,6 +427,9 @@ class DevHandler(BaseHTTPRequestHandler):
                     self.responder_json(404, {"erro": "Envio não encontrado."})
                     return
                 item = linhas[0]
+                if item.get("cliente") != cliente_logado["nome"]:
+                    self.responder_json(404, {"erro": "Envio não encontrado."})
+                    return
                 if item.get("status") != "revisao_manual":
                     self.responder_json(409, {"erro": "Só é possível tentar de novo os envios que precisam de revisão."})
                     return
@@ -399,7 +447,7 @@ class DevHandler(BaseHTTPRequestHandler):
         if url_path == "/api/confirmar-todas":
             try:
                 patch_data = {"status_revisao": "confirmado", "revisado_em": datetime.datetime.now().isoformat()}
-                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?status_revisao=neq.confirmado", data=json.dumps(patch_data).encode(), headers=HEADERS_SUPABASE, method="PATCH")
+                req = urllib.request.Request(f"{SUPABASE_URL}/rest/v1/cupons_lancamentos?status_revisao=neq.confirmado&{filtro_cliente(cliente_logado)}", data=json.dumps(patch_data).encode(), headers=HEADERS_SUPABASE, method="PATCH")
                 with urllib.request.urlopen(req):
                     pass
                 self.responder_json(200, {"mensagem": "Todas as entradas foram confirmadas!"})
@@ -409,13 +457,13 @@ class DevHandler(BaseHTTPRequestHandler):
 
         # Upload de Cupom (Item 2: limite de 10 MB e validação)
         if url_path == "/api/upload-cupom":
-            self.tratar_upload_cupom()
+            self.tratar_upload_cupom(cliente_logado)
             return
 
         self.send_response(404)
         self.end_headers()
 
-    def tratar_upload_cupom(self):
+    def tratar_upload_cupom(self, cliente_logado):
         content_type = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in content_type:
             self.responder_json(400, {"erro": "Formato inválido."})
@@ -450,14 +498,10 @@ class DevHandler(BaseHTTPRequestHandler):
                     else:
                         campos[nome_campo] = conteudo.decode("utf-8", errors="ignore")
 
-            cliente = campos.get("cliente", "").strip()
+            cliente = cliente_logado["nome"]  # sempre o cliente do login
             tamanho_orig = int(campos.get("tamanho_original", 0))
             tamanho_comp = int(campos.get("tamanho_comprimido", 0))
             img_info = arquivos.get("imagem")
-
-            if not cliente:
-                self.responder_json(400, {"erro": "Selecione um cliente válido."})
-                return
 
             if not img_info or len(img_info["dados"]) == 0:
                 self.responder_json(400, {"erro": "Nenhuma imagem enviada."})

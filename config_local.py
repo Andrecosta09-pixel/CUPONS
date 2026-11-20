@@ -22,3 +22,5 @@ def _exigir(nome):
 SUPABASE_URL = _exigir("SUPABASE_URL")
 SUPABASE_KEY = _exigir("SUPABASE_SERVICE_ROLE_KEY")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")

@@ -4,12 +4,93 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="light">
   <title>Gestão & Leitura de Cupons Fiscais</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
+
+  <!-- ================================================================= -->
+  <!-- Autenticação: login, primeiro acesso (criar senha) e esqueci a senha -->
+  <!-- ================================================================= -->
+  <div id="tela-auth" class="auth" hidden>
+    <main class="auth__form-lado">
+      <div class="brand-logo"><span class="brand-mark"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-receipt-text"/></svg></span><span>Cupons Fiscais</span></div>
+
+      <div class="auth__bloco">
+        <div id="auth-msg" class="auth-msg" hidden></div>
+
+        <section id="auth-login">
+          <h1 class="auth__h1">Entrar</h1>
+          <p class="auth__sub">Use o e-mail cadastrado pelo administrador.</p>
+          <form id="auth-form-login" class="auth__form" novalidate>
+            <div>
+              <label class="ds-label" for="auth-email">E-mail</label>
+              <input id="auth-email" type="email" class="ds-input ds-input--lg" autocomplete="username" inputmode="email" placeholder="voce@empresa.com">
+            </div>
+            <div>
+              <label class="ds-label" for="auth-senha">Senha</label>
+              <div class="campo-senha">
+                <input id="auth-senha" type="password" class="ds-input ds-input--lg" autocomplete="current-password">
+                <button type="button" id="auth-olho" class="campo-senha__olho" aria-label="Mostrar senha" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-eye"/></svg></button>
+              </div>
+            </div>
+            <div class="auth__linha"><button type="button" id="auth-ir-esqueci" class="link-acao">Esqueci minha senha</button></div>
+            <button type="submit" id="auth-entrar" class="btn btn-primary btn-lg btn-block">Entrar</button>
+          </form>
+          <p class="auth__rodape"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-mail"/></svg> <span>Primeiro acesso? Abra o <strong>link de convite</strong> que chegou no seu e-mail para criar a senha.</span></p>
+        </section>
+
+<section id="auth-secao-senha" hidden>
+          <h1 class="auth__h1">Crie sua senha</h1>
+          <p class="auth__sub">Será a sua senha de acesso. Use 8 ou mais caracteres.</p>
+          <form id="auth-form-senha" class="auth__form" novalidate>
+            <div>
+              <label class="ds-label" for="auth-nova">Nova senha</label>
+              <div class="campo-senha">
+                <input id="auth-nova" type="password" class="ds-input ds-input--lg" autocomplete="new-password">
+                <button type="button" id="auth-olho2" class="campo-senha__olho" aria-label="Mostrar senha" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-eye"/></svg></button>
+              </div>
+            </div>
+            <div>
+              <label class="ds-label" for="auth-conf">Repita a senha</label>
+              <input id="auth-conf" type="password" class="ds-input ds-input--lg" autocomplete="new-password">
+            </div>
+            <button type="submit" id="auth-salvar-senha" class="btn btn-primary btn-lg btn-block">Salvar senha e entrar</button>
+          </form>
+        </section>
+
+        <section id="auth-esqueci" hidden>
+          <h1 class="auth__h1">Esqueci minha senha</h1>
+          <p class="auth__sub">Informe o e-mail e enviamos um link para criar uma nova senha.</p>
+          <form id="auth-form-esqueci" class="auth__form" novalidate>
+            <div>
+              <label class="ds-label" for="auth-email2">E-mail</label>
+              <input id="auth-email2" type="email" class="ds-input ds-input--lg" autocomplete="username" inputmode="email">
+            </div>
+            <button type="submit" id="auth-enviar-link" class="btn btn-primary btn-lg btn-block">Enviar link</button>
+            <button type="button" id="auth-voltar" class="btn btn-secondary btn-lg btn-block">Voltar ao login</button>
+          </form>
+        </section>
+      </div>
+    </main>
+
+    <aside class="auth__lado" aria-hidden="true">
+      <div class="auth__lado-conteudo">
+        <span class="auth__lado-ico"><svg class="ic ic--xl" aria-hidden="true"><use href="/icons.svg#i-receipt-text"/></svg></span>
+        <h2 class="auth__lado-titulo">Seus comprovantes, lidos e organizados</h2>
+        <ul class="auth__passos">
+          <li><span><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-camera"/></svg></span><div><strong>Fotografe</strong><small>Envie a foto do cupom pelo celular.</small></div></li>
+          <li><span><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-sparkles"/></svg></span><div><strong>A IA lê</strong><small>Data, estabelecimento, valor e categoria.</small></div></li>
+          <li><span><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-circle-check"/></svg></span><div><strong>Você confere</strong><small>Confirme e acompanhe tudo no painel.</small></div></li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <div id="app-shell" hidden>
 
   <!-- ================================================================= -->
   <!-- Header Principal com Design System e Abas -->
@@ -35,12 +116,17 @@
           <span id="badge-novas-entradas" class="nav-count-badge" style="display: none;">0</span>
         </button>
         <button type="button" class="nav-tab" data-tab="tab-historico-envios">
-          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-folder-open"/></svg> Histórico de Envios
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-folder-open"/></svg> Histórico
         </button>
         <button type="button" class="nav-tab" data-tab="tab-dashboard">
           <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-chart-column"/></svg> Dashboard
         </button>
       </nav>
+      <div class="usuario">
+        <span class="usuario__ini" id="usuario-inicial" aria-hidden="true">?</span>
+        <span class="usuario__nome" id="usuario-nome">—</span>
+        <button type="button" id="btn-sair" class="btn btn-ghost btn-sm" aria-label="Sair do sistema"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-log-out"/></svg> <span class="usuario__sair">Sair</span></button>
+      </div>
     </div>
   </header>
 
@@ -54,35 +140,6 @@
     <!-- =============================================================== -->
     <section id="tab-novo-envio" class="tab-content active">
       
-      <!-- Card de Cliente Real (Sem Mocks) -->
-      <div class="ds-card">
-        <div class="ds-card-header">
-          <div>
-            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-user"/></svg> Cliente / Unidade</h2>
-            <p class="ds-card-subtitle">Selecione o cliente de destino para os comprovantes</p>
-          </div>
-          <button type="button" id="btn-abrir-modal-cliente" class="btn btn-secondary btn-sm">
-            <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-plus"/></svg> Novo cliente
-          </button>
-        </div>
-
-        <!-- Seletor Dinâmico de Clientes -->
-        <div id="wrapper-cliente">
-          <select id="select-cliente" class="ds-select">
-            <option value="">Carregando clientes...</option>
-          </select>
-        </div>
-
-        <!-- Empty State Clientes (caso não haja nenhum) -->
-        <div id="empty-clientes" class="empty-state" style="display: none; padding: 20px;">
-          <div class="empty-state-icon"><svg class="ic ic--lg" aria-hidden="true"><use href="/icons.svg#i-users"/></svg></div>
-          <div class="empty-state-text">Nenhum cliente cadastrado no banco.</div>
-          <button type="button" class="btn btn-primary btn-sm btn-trigger-modal-cliente">
-            Cadastrar primeiro cliente
-          </button>
-        </div>
-      </div>
-
       <!-- Card de Importação e Regras de Imagem -->
       <div class="ds-card">
         <div class="ds-card-header">
@@ -150,7 +207,6 @@
             <thead>
               <tr>
                 <th>Enviado em</th>
-                <th>Cliente</th>
                 <th>Arquivo</th>
                 <th>Situação</th>
                 <th>Tentativas</th>
@@ -159,7 +215,7 @@
               </tr>
             </thead>
             <tbody id="lista-fila-processamento">
-              <tr><td colspan="7" class="empty-state">Carregando envios…</td></tr>
+              <tr><td colspan="6" class="empty-state">Carregando envios…</td></tr>
             </tbody>
           </table>
         </div>
@@ -190,7 +246,6 @@
               <tr>
                 <th>Data</th>
                 <th>Estabelecimento</th>
-                <th>Cliente</th>
                 <th>Categoria</th>
                 <th>Valor Total</th>
                 <th>Confiança</th>
@@ -200,7 +255,7 @@
             </thead>
             <tbody id="tbody-novas-entradas">
               <tr>
-                <td colspan="8" class="empty-state">Carregando entradas...</td>
+                <td colspan="7" class="empty-state">Carregando entradas...</td>
               </tr>
             </tbody>
           </table>
@@ -218,24 +273,24 @@
             <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-folder-open"/></svg> Histórico Consolidado de Envios</h2>
             <p class="ds-card-subtitle">Registro de todos os lotes enviados, fotos e auditoria</p>
           </div>
-          <input type="text" id="filtro-busca-historico" class="ds-input" placeholder="Buscar por estabelecimento, cliente..." style="max-width: 280px;">
+          <input type="text" id="filtro-busca-historico" class="ds-input" placeholder="Buscar por situação ou data" aria-label="Buscar no histórico" style="max-width: 280px;">
         </div>
 
         <div class="ds-table-wrapper">
-          <table class="ds-table">
+          <table class="ds-table ds-table--click">
             <thead>
               <tr>
-                <th>Data / Hora</th>
-                <th>Cliente</th>
-                <th>Qtd Imagens</th>
+                <th>Enviado em</th>
                 <th>Tamanho</th>
-                <th>Status</th>
-                <th>Ações</th>
+                <th>Situação</th>
+                <th>Lançamentos</th>
+                <th>Total lido</th>
+                <th><span class="sr-only">Detalhar</span></th>
               </tr>
             </thead>
             <tbody id="tbody-historico-envios">
               <tr>
-                <td colspan="6" class="empty-state">Carregando histórico...</td>
+                <td colspan="6" class="empty-state">Carregando histórico…</td>
               </tr>
             </tbody>
           </table>
@@ -247,44 +302,7 @@
     <!-- ABA 5: DASHBOARD DE CONTROLE (Item 5 do Backlog) -->
     <!-- =============================================================== -->
     <section id="tab-dashboard" class="tab-content" style="display: none;">
-      
-      <!-- Cards de Resumo Executivo -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
-        <div class="ds-card" style="margin-bottom: 0;">
-          <div class="ds-card-subtitle">Total registrado</div>
-          <div id="dash-total-periodo" class="kpi">R$ 0,00</div>
-        </div>
-        <div class="ds-card" style="margin-bottom: 0;">
-          <div class="ds-card-subtitle">Comprovantes</div>
-          <div id="dash-total-comprovantes" class="kpi">0</div>
-        </div>
-        <div class="ds-card" style="margin-bottom: 0;">
-          <div class="ds-card-subtitle">Ticket médio</div>
-          <div id="dash-ticket-medio" class="kpi">R$ 0,00</div>
-        </div>
-        <div class="ds-card" style="margin-bottom: 0;">
-          <div class="ds-card-subtitle">Pendentes de Revisão</div>
-          <div id="dash-pendentes-revisao" class="kpi">0</div>
-        </div>
-      </div>
-
-      <!-- Distribuição por Categoria e Top Estabelecimentos -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
-        <div class="ds-card">
-          <h3 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-tag"/></svg> Gastos por Categoria</h3>
-          <div id="dash-gastos-categoria" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
-            <div class="empty-state">Sem dados de categorias.</div>
-          </div>
-        </div>
-
-        <div class="ds-card">
-          <h3 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-store"/></svg> Top Estabelecimentos</h3>
-          <div id="dash-top-estabelecimentos" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
-            <div class="empty-state">Sem dados de estabelecimentos.</div>
-          </div>
-        </div>
-      </div>
-
+      <div id="dash-root"><div class="empty-state">Carregando dashboard…</div></div>
     </section>
 
   </main>
@@ -292,30 +310,6 @@
   <!-- ================================================================= -->
   <!-- Modais do Sistema -->
   <!-- ================================================================= -->
-
-  <!-- Modal 1: Novo Cliente -->
-  <div id="modal-novo-cliente" class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 class="ds-card-title">Cadastrar Novo Cliente</h3>
-        <button type="button" class="btn btn-ghost btn-sm btn-fechar-modal" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-x"/></svg></button>
-      </div>
-      <div class="modal-body">
-        <div style="margin-bottom: 14px;">
-          <label class="ds-label" for="input-novo-cliente-nome">Nome do Cliente / Razão Social <span class="req">*</span></label>
-          <input type="text" id="input-novo-cliente-nome" class="ds-input" placeholder="Ex: Padaria Central">
-        </div>
-        <div>
-          <label class="ds-label" for="input-novo-cliente-doc">Documento (CNPJ ou CPF opcional)</label>
-          <input type="text" id="input-novo-cliente-doc" class="ds-input" placeholder="00.000.000/0000-00">
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-fechar-modal">Cancelar</button>
-        <button type="button" id="btn-salvar-novo-cliente" class="btn btn-primary">Salvar cliente</button>
-      </div>
-    </div>
-  </div>
 
   <!-- Modal 2: Visualizar Comprovante Original e Detalhamento Completo -->
   <div id="modal-ver-comprovante" class="modal-overlay">
@@ -393,9 +387,14 @@
     <footer id="drawer-rodape" class="drawer__foot"></footer>
   </aside>
 
+  </div><!-- /app-shell -->
+
   <!-- Scripts -->
   <script src="/compressor.js"></script>
   <script src="/sync.js"></script>
+  <script src="/avisos.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/dashboard.js"></script>
   <script src="/app.js"></script>
 
 </body>

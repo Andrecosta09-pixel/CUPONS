@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
+import { autenticar } from './_auth.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -25,6 +26,8 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(url, chave, { auth: { persistSession: false } });
+  const cliente = await autenticar(req, res, supabase);
+  if (!cliente) return;
 
   // Só envios que precisam de revisão voltam para a fila
   const { data, error } = await supabase
@@ -37,6 +40,7 @@ export default async function handler(req, res) {
       atualizado_em: new Date().toISOString()
     })
     .eq('id', id)
+    .eq('cliente', cliente.nome)
     .eq('status', 'revisao_manual')
     .select('id');
 

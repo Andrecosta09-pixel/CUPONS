@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
+import { autenticar } from './_auth.js';
 
 /**
  * Configuração do Supabase com service_role_key (acesso admin).
@@ -44,7 +45,7 @@ function slugCliente(cliente) {
  *
  * Recebe: FormData com campos:
  *   - imagem: arquivo (Blob/File) da imagem comprimida
- *   - cliente: "Wal Salgados" ou "André Buffet"
+ *   (o cliente vem do login, não do formulário)
  *   - tamanho_original: tamanho original em bytes (string)
  *   - tamanho_comprimido: tamanho comprimido em bytes (string)
  *   - captured_at: ISO timestamp da captura (string)
@@ -58,6 +59,12 @@ export default async function handler(req, res) {
   }
 
   try {
+    // --- 0. Login: o cliente é sempre o do usuário autenticado ---
+    const supabase = criarClienteSupabase();
+    const clienteLogado = await autenticar(req, res, supabase);
+    if (!clienteLogado) return;
+    const cliente = clienteLogado.nome;
+
     // --- 1. Ler o FormData da requisição ---
     // Na Vercel, o body parser multipart não é automático para o runtime Node.
     // Precisamos parsear manualmente usando a API Web.
@@ -82,24 +89,16 @@ export default async function handler(req, res) {
     const partes = parsearMultipart(body, boundary);
 
     // --- 2. Validar campos obrigatórios ---
-    const cliente = partes.campos['cliente'];
     const tamanhoOriginal = parseInt(partes.campos['tamanho_original'] || '0', 10);
     const tamanhoComprimido = parseInt(partes.campos['tamanho_comprimido'] || '0', 10);
     const capturedAt = partes.campos['captured_at'] || new Date().toISOString();
     const arquivo = partes.arquivos['imagem'];
-
-    if (!cliente || !['Wal Salgados', 'André Buffet'].includes(cliente)) {
-      return res.status(400).json({
-        erro: 'Campo "cliente" obrigatório. Valores aceitos: "Wal Salgados" ou "André Buffet".'
-      });
-    }
 
     if (!arquivo || !arquivo.buffer || arquivo.buffer.length === 0) {
       return res.status(400).json({ erro: 'Campo "imagem" obrigatório. Envie uma imagem comprimida.' });
     }
 
     // --- 3. Upload para o Supabase Storage ---
-    const supabase = criarClienteSupabase();
     const agora = new Date();
     const anoMes = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}`;
     const idUnico = crypto.randomUUID();

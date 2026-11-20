@@ -5,8 +5,6 @@
 // =============================================================================
 
 const estado = {
-  clienteSelecionado: '',
-  clientes: [],
   categorias: [],
   imagensLote: [], // Array de objetos { id, file, blob, originalSize, compressedSize, previewUrl, status }
   enviando: false,
@@ -21,24 +19,26 @@ const estado = {
 // ---------------------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
   configurarNavegacaoAbas();
-  configurarClientes();
   configurarImportacaoImagens();
   configurarModais();
   configurarDrawerEnvio();
+});
 
-  // Carregar dados iniciais
-  carregarClientes();
+// Chamado por auth.js depois que o login é validado
+let _timerApp = null;
+window.iniciarApp = function () {
   carregarCategorias();
   carregarNovasEntradas();
   carregarDashboard();
 
   // Polling a cada 6 segundos para atualizar processamento e novas entradas
-  setInterval(() => {
+  clearInterval(_timerApp);
+  _timerApp = setInterval(() => {
     if (estado.abaAtiva === 'tab-processamento') carregarFilaProcessamento();
     if (estado.abaAtiva === 'tab-novas-entradas') carregarNovasEntradas();
     if (estado.abaAtiva === 'tab-dashboard') carregarDashboard();
   }, 6000);
-});
+};
 
 // ---------------------------------------------------------------------------
 // 1. Navegação por Abas (Design System)
@@ -63,89 +63,6 @@ function configurarNavegacaoAbas() {
       if (targetId === 'tab-historico-envios') carregarHistoricoEnvios();
       if (targetId === 'tab-dashboard') carregarDashboard();
     });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// 2. Clientes Reais (Item 3 do Backlog — Sem Mocks)
-// ---------------------------------------------------------------------------
-async function carregarClientes() {
-  const select = document.getElementById('select-cliente');
-  const empty = document.getElementById('empty-clientes');
-  const wrapper = document.getElementById('wrapper-cliente');
-
-  try {
-    const res = await fetch('/api/clientes');
-    if (!res.ok) throw new Error('Falha ao buscar clientes');
-    estado.clientes = await res.json();
-
-    if (!estado.clientes || estado.clientes.length === 0) {
-      wrapper.style.display = 'none';
-      empty.style.display = 'block';
-      select.innerHTML = '<option value="">Nenhum cliente cadastrado</option>';
-      estado.clienteSelecionado = '';
-    } else {
-      wrapper.style.display = 'block';
-      empty.style.display = 'none';
-      select.innerHTML = '<option value="">-- Selecione o Cliente / Unidade --</option>' +
-        estado.clientes.map(c => `<option value="${c.nome}">${c.nome}${c.documento ? ` (${c.documento})` : ''}</option>`).join('');
-      
-      // Manter seleção se possível
-      if (estado.clienteSelecionado) {
-        select.value = estado.clienteSelecionado;
-      }
-    }
-  } catch (e) {
-    console.error('Erro ao carregar clientes:', e);
-  }
-}
-
-function configurarClientes() {
-  const select = document.getElementById('select-cliente');
-  select.addEventListener('change', (e) => {
-    estado.clienteSelecionado = e.target.value;
-    atualizarBotaoEnvio();
-  });
-
-  const btnSalvar = document.getElementById('btn-salvar-novo-cliente');
-  btnSalvar.addEventListener('click', async () => {
-    const inputNome = document.getElementById('input-novo-cliente-nome');
-    const inputDoc = document.getElementById('input-novo-cliente-doc');
-    const nome = inputNome.value.trim();
-    const doc = inputDoc.value.trim();
-
-    if (!nome) {
-      alert('Informe o nome do cliente.');
-      return;
-    }
-
-    btnSalvar.disabled = true;
-    btnSalvar.textContent = 'Salvando...';
-
-    try {
-      const res = await fetch('/api/clientes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nome, documento: doc })
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.erro || 'Erro ao salvar cliente');
-      }
-
-      const novo = await res.json();
-      fecharTodosModais();
-      inputNome.value = '';
-      inputDoc.value = '';
-      estado.clienteSelecionado = novo.nome;
-      await carregarClientes();
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      btnSalvar.disabled = false;
-      btnSalvar.textContent = 'Salvar Cliente';
-    }
   });
 }
 
@@ -288,11 +205,10 @@ window.removerImagemLote = function(id) {
 
 function atualizarBotaoEnvio() {
   const btn = document.getElementById('btn-enviar-lote');
-  const temCliente = !!estado.clienteSelecionado;
   const temImagens = estado.imagensLote.length > 0;
   const todasProntas = estado.imagensLote.every(i => i.pronto);
 
-  btn.disabled = !(temCliente && temImagens && todasProntas && !estado.enviando);
+  btn.disabled = !(temImagens && todasProntas && !estado.enviando);
 }
 
 // ---------------------------------------------------------------------------
@@ -310,27 +226,30 @@ async function executarEnvioLote() {
     for (const item of estado.imagensLote) {
       const formData = new FormData();
       formData.append('imagem', item.blob || item.file, item.file.name);
-      formData.append('cliente', estado.clienteSelecionado);
       formData.append('tamanho_original', item.originalSize);
       formData.append('tamanho_comprimido', item.compressedSize);
 
-      await fetch('/api/upload-cupom', {
+      const resp = await fetch('/api/upload-cupom', {
         method: 'POST',
         body: formData
       });
+      if (!resp.ok) {
+        const corpo = await resp.json().catch(() => ({}));
+        throw new Error(corpo.erro || 'o servidor recusou o envio');
+      }
     }
 
     // Limpar lote e mudar para a aba de processamento
     estado.imagensLote = [];
     renderizarMiniaturas();
-    alert('Comprovante(s) enviado(s) com sucesso! Redirecionando para a fila de processamento.');
+    toast('Envio feito. A IA já está lendo os comprovantes.');
 
     // Alternar para aba Processamento
     const tabProcessamento = document.querySelector('[data-tab="tab-processamento"]');
     if (tabProcessamento) tabProcessamento.click();
 
   } catch (e) {
-    alert('Erro ao enviar lote: ' + e.message);
+    toast('Não foi possível enviar: ' + e.message, 'erro');
   } finally {
     estado.enviando = false;
     btn.innerHTML = '<svg class="ic" aria-hidden="true"><use href="/icons.svg#i-send"/></svg> Enviar e processar';
@@ -379,7 +298,7 @@ async function carregarFilaProcessamento() {
     estado.entradas = resEntradas.ok ? await resEntradas.json() : [];
 
     if (estado.fila.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">
         <div class="empty-state-icon">${svgIc('circle-check', ' ic--lg')}</div>
         <div class="empty-state-text">Nenhum envio por aqui ainda. Envie um comprovante na aba Novo Envio.</div>
       </td></tr>`;
@@ -388,9 +307,8 @@ async function carregarFilaProcessamento() {
         const sit = SITUACAO_FILA[item.status] || { rotulo: item.status, classe: 'badge-neutro' };
         const qtd = estado.entradas.filter(e => e.cupom_id === item.id).length;
         return `
-          <tr class="linha-envio" tabindex="0" role="button" data-id="${esc(item.id)}" aria-label="Ver detalhamento do envio de ${esc(item.cliente)}">
+          <tr class="linha-envio" tabindex="0" role="button" data-id="${esc(item.id)}" aria-label="Ver detalhamento do envio de ${dataHora(item.criado_em)}">
             <td>${dataHora(item.criado_em)}</td>
-            <td>${esc(item.cliente)}</td>
             <td>${formatarBytes(item.tamanho_comprimido_bytes)}</td>
             <td><span class="badge ${sit.classe}">${sit.rotulo}</span></td>
             <td>${item.tentativas || 0} de ${MAX_TENTATIVAS}</td>
@@ -404,7 +322,7 @@ async function carregarFilaProcessamento() {
     if (estado.envioAberto) renderizarDrawerEnvio(estado.envioAberto);
   } catch (e) {
     console.error('Erro na fila:', e);
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Não foi possível carregar os envios. Tente de novo em instantes.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Não foi possível carregar os envios. Tente de novo em instantes.</td></tr>';
   }
 }
 
@@ -477,7 +395,7 @@ function renderizarDrawerEnvio(id) {
   const comp = Number(item.tamanho_comprimido_bytes) || 0;
   const reducao = orig > 0 && comp > 0 ? Math.max(0, Math.round((1 - comp / orig) * 100)) : null;
 
-  document.getElementById('drawer-titulo').textContent = `${item.cliente} · ${dataHora(item.criado_em)}`;
+  document.getElementById('drawer-titulo').textContent = `Envio de ${dataHora(item.criado_em)}`;
   const badge = document.getElementById('drawer-situacao');
   badge.textContent = sit.rotulo;
   badge.className = `badge ${sit.classe}`;
@@ -508,7 +426,6 @@ function renderizarDrawerEnvio(id) {
     <section class="dr-sec"><h3>Passo a passo</h3><ol class="tl">${passos}</ol></section>
     <section class="dr-sec"><h3>Dados do envio</h3>
       <dl class="dr-grid">
-        <div><dt>Cliente</dt><dd>${esc(item.cliente)}</dd></div>
         <div><dt>Enviado em</dt><dd>${dataHora(item.criado_em)}</dd></div>
         <div><dt>Tamanho original</dt><dd>${orig ? formatarBytes(orig) : '—'}</dd></div>
         <div><dt>Depois de compactar</dt><dd>${comp ? formatarBytes(comp) : '—'}${reducao !== null ? ` (−${reducao}%)` : ''}</dd></div>
@@ -520,9 +437,10 @@ function renderizarDrawerEnvio(id) {
     </section>
     <section class="dr-sec"><h3>O que a IA leu (${lancs.length})</h3>${lancHtml}</section>
     <section class="dr-sec"><h3>Foto enviada</h3>
-      <div class="dr-foto"><img src="/api/imagem-cupom?path=${encodeURIComponent(item.storage_path)}" alt="Foto do comprovante enviado" loading="lazy"></div>
+      <div class="dr-foto"><img data-src-protegida="/api/imagem-cupom?path=${encodeURIComponent(item.storage_path)}" alt="Foto do comprovante enviado"></div>
     </section>`;
   corpo.scrollTop = topo;
+  preencherImagens(corpo);
 
   const rodape = document.getElementById('drawer-rodape');
   const podeReprocessar = item.status === 'revisao_manual';
@@ -544,9 +462,10 @@ async function reprocessarEnvio(id, botao) {
       body: JSON.stringify({ id })
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro || 'Falha ao reenviar');
+    toast('Leitura reiniciada. Acompanhe o passo a passo aqui.', 'info');
     await carregarFilaProcessamento();
   } catch (e) {
-    alert('Não foi possível tentar de novo: ' + e.message);
+    toast('Não foi possível tentar de novo: ' + e.message, 'erro');
     botao.disabled = false;
     botao.innerHTML = svgIc('refresh-cw') + ' Tentar a leitura de novo';
   }
@@ -578,12 +497,13 @@ async function carregarNovasEntradas() {
     countConfirmar.textContent = pendentes.length;
 
     if (!entradas || entradas.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Nenhum comprovante registrado ainda.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Nenhum comprovante registrado ainda.</td></tr>';
       return;
     }
 
     tbody.innerHTML = entradas.map(item => {
-      const confiancaBadge = item.confianca === 'alta' ? 'badge-alta' : (item.confianca === 'media' ? 'badge-media' : 'badge-baixa');
+      const conf = item.confianca || 'alta';
+      const confiancaBadge = conf === 'alta' ? 'badge-alta' : (conf === 'media' ? 'badge-media' : 'badge-baixa');
       const statusBadge = item.status_revisao === 'confirmado' ? 'badge-confirmado' : (item.status_revisao === 'revisar' ? 'badge-revisar' : 'badge-novo');
       const dataFormatada = item.data_emissao ? item.data_emissao.split('-').reverse().join('/') : 'n/d';
       const valorFormatado = (parseFloat(item.valor_total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -595,7 +515,6 @@ async function carregarNovasEntradas() {
             <div style="font-weight: 600;">${item.estabelecimento || 'Não identificado'}</div>
             ${item.cnpj ? `<div style="font-size: 0.7rem; color: var(--text-muted);">${item.cnpj}</div>` : ''}
           </td>
-          <td>${item.cliente}</td>
           <td>
             <span class="badge badge-neutro"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-tag"/></svg> ${item.categoria || 'Outros'}</span>
           </td>
@@ -615,102 +534,55 @@ async function carregarNovasEntradas() {
     }).join('');
 
   } catch (e) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Erro ao carregar entradas.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Erro ao carregar entradas.</td></tr>';
   }
 }
 
 window.confirmarEntradaIndividual = async function(id) {
   try {
-    await fetch('/api/confirmar-entrada', {
+    const res = await fetch('/api/confirmar-entrada', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id })
     });
+    if (!res.ok) throw new Error('o servidor recusou a confirmação');
+    toast('Lançamento confirmado.');
     carregarNovasEntradas();
     carregarDashboard();
   } catch (e) {
-    alert('Erro ao confirmar: ' + e.message);
+    toast('Não foi possível confirmar: ' + e.message, 'erro');
   }
 };
 
 document.getElementById('btn-confirmar-todos').addEventListener('click', async () => {
-  if (!confirm('Confirmar todos os comprovantes pendentes?')) return;
+  const qtd = parseInt(document.getElementById('count-confirmar-todos').textContent, 10) || 0;
+  if (qtd === 0) { toast('Não há lançamentos pendentes para confirmar.', 'info'); return; }
+  const sim = await confirmar({
+    titulo: qtd === 1 ? 'Confirmar 1 lançamento?' : `Confirmar ${qtd} lançamentos?`,
+    texto: 'Eles seguem para o painel oficial e entram nos totais do dashboard. Confira os valores antes se tiver dúvida.',
+    acao: qtd === 1 ? 'Confirmar lançamento' : `Confirmar ${qtd} lançamentos`
+  });
+  if (!sim) return;
   try {
-    await fetch('/api/confirmar-todas', { method: 'POST' });
+    const res = await fetch('/api/confirmar-todas', { method: 'POST' });
+    if (!res.ok) throw new Error('o servidor recusou a confirmação');
+    toast(qtd === 1 ? '1 lançamento confirmado.' : `${qtd} lançamentos confirmados.`);
     carregarNovasEntradas();
     carregarDashboard();
   } catch (e) {
-    alert('Erro: ' + e.message);
+    toast('Não foi possível confirmar: ' + e.message, 'erro');
   }
 });
 
 // ---------------------------------------------------------------------------
 // 7. Dashboard de Controle (Item 5.4)
 // ---------------------------------------------------------------------------
-async function carregarDashboard() {
-  try {
-    const res = await fetch('/api/dashboard-stats');
-    if (!res.ok) throw new Error('Erro stats');
-    const stats = await res.json();
-
-    document.getElementById('dash-total-periodo').textContent = (stats.total_periodo || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    document.getElementById('dash-total-comprovantes').textContent = stats.qtd_comprovantes || 0;
-    document.getElementById('dash-ticket-medio').textContent = (stats.ticket_medio || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    document.getElementById('dash-pendentes-revisao').textContent = stats.pendentes_revisao || 0;
-
-    // Categorias
-    const catContainer = document.getElementById('dash-gastos-categoria');
-    if (!stats.gastos_categoria || stats.gastos_categoria.length === 0) {
-      catContainer.innerHTML = '<div class="empty-state">Sem dados.</div>';
-    } else {
-      catContainer.innerHTML = stats.gastos_categoria.map(cat => {
-        const perc = stats.total_periodo > 0 ? ((cat.total / stats.total_periodo) * 100).toFixed(1) : 0;
-        return `
-          <div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 4px;">
-              <span>${cat.categoria}</span>
-              <span style="font-weight: 600;">${cat.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${perc}%)</span>
-            </div>
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill" style="width: ${perc}%;"></div>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // Top Estabelecimentos
-    const estabContainer = document.getElementById('dash-top-estabelecimentos');
-    if (!stats.top_estabelecimentos || stats.top_estabelecimentos.length === 0) {
-      estabContainer.innerHTML = '<div class="empty-state">Sem dados.</div>';
-    } else {
-      estabContainer.innerHTML = stats.top_estabelecimentos.map((est, idx) => `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-subtle);">
-          <div style="font-size: 0.85rem; font-weight: 500;">${idx + 1}. ${est.nome}</div>
-          <div style="font-weight: 600; color: var(--c-strong); font-size: 13px;">${est.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-        </div>
-      `).join('');
-    }
-
-  } catch (e) {
-    console.error('Erro dashboard:', e);
-  }
-}
+// carregarDashboard() agora vive em dashboard.js
 
 // ---------------------------------------------------------------------------
 // 8. Modais & Comprovante Original
 // ---------------------------------------------------------------------------
 function configurarModais() {
-  document.getElementById('btn-abrir-modal-cliente').addEventListener('click', () => {
-    document.getElementById('modal-novo-cliente').classList.add('open');
-  });
-
-  document.querySelectorAll('.btn-trigger-modal-cliente').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.getElementById('modal-novo-cliente').classList.add('open');
-    });
-  });
-
   document.querySelectorAll('.btn-fechar-modal').forEach(btn => {
     btn.addEventListener('click', fecharTodosModais);
   });
@@ -735,7 +607,9 @@ window.verComprovanteOriginal = async function(cupomId) {
     const storagePath = itemFila ? itemFila.storage_path : (entrada ? entrada.storage_path : '');
 
     if (storagePath) {
-      document.getElementById('img-modal-comprovante').src = `/api/imagem-cupom?path=${encodeURIComponent(storagePath)}`;
+      const imgModal = document.getElementById('img-modal-comprovante');
+      imgModal.removeAttribute('src');
+      imagemProtegida(`/api/imagem-cupom?path=${encodeURIComponent(storagePath)}`).then((u) => { imgModal.src = u; }).catch(() => { imgModal.alt = 'Não foi possível carregar a foto.'; });
     } else {
       document.getElementById('img-modal-comprovante').src = '';
     }
@@ -757,8 +631,68 @@ window.verComprovanteOriginal = async function(cupomId) {
 
     document.getElementById('modal-ver-comprovante').classList.add('open');
   } catch (e) {
-    alert('Erro ao carregar detalhamento do comprovante: ' + e.message);
+    toast('Não foi possível abrir o comprovante: ' + e.message, 'erro');
   }
 };
 
 document.getElementById('btn-reprocessar-pendentes').addEventListener('click', carregarFilaProcessamento);
+
+
+// ---------------------------------------------------------------------------
+// Histórico consolidado de envios (aba Histórico de Envios)
+// ---------------------------------------------------------------------------
+async function carregarHistoricoEnvios() {
+  const tbody = document.getElementById('tbody-historico-envios');
+  try {
+    const [resFila, resEntradas] = await Promise.all([fetch('/api/processamento-fila'), fetch('/api/novas-entradas')]);
+    if (!resFila.ok) throw new Error('Erro ao buscar envios');
+    estado.fila = await resFila.json();
+    estado.entradas = resEntradas.ok ? await resEntradas.json() : [];
+    renderizarHistoricoEnvios();
+  } catch (e) {
+    console.error('Erro no histórico:', e);
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Não foi possível carregar o histórico. Tente de novo em instantes.</td></tr>';
+  }
+}
+
+function renderizarHistoricoEnvios() {
+  const tbody = document.getElementById('tbody-historico-envios');
+  const termo = (document.getElementById('filtro-busca-historico').value || '').trim().toLowerCase();
+  const lista = (estado.fila || []).filter((item) => {
+    if (!termo) return true;
+    const sit = (SITUACAO_FILA[item.status] || {}).rotulo || item.status;
+    return `${sit} ${dataHora(item.criado_em)}`.toLowerCase().includes(termo);
+  });
+
+  if (lista.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${termo ? 'Nenhum envio encontrado para essa busca.' : 'Nenhum envio registrado ainda.'}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = lista.map((item) => {
+    const sit = SITUACAO_FILA[item.status] || { rotulo: item.status, classe: 'badge-neutro' };
+    const lancs = (estado.entradas || []).filter((e) => e.cupom_id === item.id);
+    const total = lancs.reduce((s, e) => s + (parseFloat(e.valor_total) || 0), 0);
+    return `
+      <tr class="linha-envio" tabindex="0" role="button" data-id="${esc(item.id)}" aria-label="Ver detalhamento do envio de ${dataHora(item.criado_em)}">
+        <td>${dataHora(item.criado_em)}</td>
+        <td>${formatarBytes(item.tamanho_comprimido_bytes)}</td>
+        <td><span class="badge ${sit.classe}">${sit.rotulo}</span></td>
+        <td>${lancs.length || '—'}</td>
+        <td class="td-valor">${lancs.length ? reais(total) : '—'}</td>
+        <td>${svgIc('chevron-right')}</td>
+      </tr>`;
+  }).join('');
+}
+
+document.getElementById('filtro-busca-historico').addEventListener('input', renderizarHistoricoEnvios);
+document.getElementById('tbody-historico-envios').addEventListener('click', (ev) => {
+  const tr = ev.target.closest('tr.linha-envio');
+  if (tr && tr.dataset.id) abrirDrawerEnvio(tr.dataset.id, tr);
+});
+document.getElementById('tbody-historico-envios').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' || ev.key === ' ') {
+    const tr = ev.target.closest('tr.linha-envio');
+    if (tr) { ev.preventDefault(); abrirDrawerEnvio(tr.dataset.id, tr); }
+  }
+});
