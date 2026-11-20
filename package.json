@@ -1,0 +1,13 @@
+{
+  "name": "cupom-fiscal-pwa",
+  "version": "1.0.0",
+  "description": "PWA para captura e leitura automatizada de cupons fiscais",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <title>Gestão & Leitura de Cupons Fiscais</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <!-- ================================================================= -->
+  <!-- Header Principal com Design System e Abas -->
+  <!-- ================================================================= -->
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div class="brand-logo">
+        <span class="brand-mark"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-receipt-text"/></svg></span>
+        <span>Cupons Fiscais</span>
+        <span class="brand-badge">IA Core</span>
+      </div>
+
+      <!-- Abas de Navegação -->
+      <nav class="app-nav">
+        <button type="button" class="nav-tab active" data-tab="tab-novo-envio">
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-upload"/></svg> Novo Envio
+        </button>
+        <button type="button" class="nav-tab" data-tab="tab-processamento">
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-clock"/></svg> Processamento
+        </button>
+        <button type="button" class="nav-tab" data-tab="tab-novas-entradas">
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-sparkles"/></svg> Novas Entradas
+          <span id="badge-novas-entradas" class="nav-count-badge" style="display: none;">0</span>
+        </button>
+        <button type="button" class="nav-tab" data-tab="tab-historico-envios">
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-folder-open"/></svg> Histórico de Envios
+        </button>
+        <button type="button" class="nav-tab" data-tab="tab-dashboard">
+          <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-chart-column"/></svg> Dashboard
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ================================================================= -->
+  <!-- Container Principal -->
+  <!-- ================================================================= -->
+  <main class="app-container">
+
+    <!-- =============================================================== -->
+    <!-- ABA 1: NOVO ENVIO (Item 2 & 3 do Backlog) -->
+    <!-- =============================================================== -->
+    <section id="tab-novo-envio" class="tab-content active">
+      
+      <!-- Card de Cliente Real (Sem Mocks) -->
+      <div class="ds-card">
+        <div class="ds-card-header">
+          <div>
+            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-user"/></svg> Cliente / Unidade</h2>
+            <p class="ds-card-subtitle">Selecione o cliente de destino para os comprovantes</p>
+          </div>
+          <button type="button" id="btn-abrir-modal-cliente" class="btn btn-secondary btn-sm">
+            <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-plus"/></svg> Novo cliente
+          </button>
+        </div>
+
+        <!-- Seletor Dinâmico de Clientes -->
+        <div id="wrapper-cliente">
+          <select id="select-cliente" class="ds-select">
+            <option value="">Carregando clientes...</option>
+          </select>
+        </div>
+
+        <!-- Empty State Clientes (caso não haja nenhum) -->
+        <div id="empty-clientes" class="empty-state" style="display: none; padding: 20px;">
+          <div class="empty-state-icon"><svg class="ic ic--lg" aria-hidden="true"><use href="/icons.svg#i-users"/></svg></div>
+          <div class="empty-state-text">Nenhum cliente cadastrado no banco.</div>
+          <button type="button" class="btn btn-primary btn-sm btn-trigger-modal-cliente">
+            Cadastrar primeiro cliente
+          </button>
+        </div>
+      </div>
+
+      <!-- Card de Importação e Regras de Imagem -->
+      <div class="ds-card">
+        <div class="ds-card-header">
+          <div>
+            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-camera"/></svg> Importação de imagens</h2>
+            <p class="ds-card-subtitle">Máximo de <strong>5 imagens</strong> por envio • Compactação automática para <strong>até 10 MB</strong></p>
+          </div>
+          <span id="contador-imagens-header" class="badge badge-novo">0 / 5 imagens</span>
+        </div>
+
+        <!-- Área de Drag & Drop -->
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon"><svg class="ic ic--lg" aria-hidden="true"><use href="/icons.svg#i-upload"/></svg></div>
+          <div class="dropzone-title">Arraste seus comprovantes aqui ou clique para selecionar</div>
+          <div class="dropzone-hint">Suporta fotos de câmera e galeria (JPG, PNG) • Compactação inteligente no navegador</div>
+          
+          <div class="dropzone-actions">
+            <button type="button" id="btn-trigger-camera" class="btn btn-secondary btn-sm">
+              <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-camera"/></svg> Tirar Foto
+            </button>
+            <button type="button" id="btn-trigger-galeria" class="btn btn-secondary btn-sm">
+              <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-images"/></svg> Galeria
+            </button>
+          </div>
+
+          <!-- Inputs Ocultos -->
+          <input type="file" id="file-camera" accept="image/*" capture="environment" style="display: none;">
+          <input type="file" id="file-galeria" accept="image/*" multiple style="display: none;">
+        </div>
+
+        <!-- Alerta de Validação / Erro de Limite -->
+        <div id="alerta-limite-imagens" class="alerta" style="display: none;"></div>
+
+        <!-- Grade de Miniaturas Pré-Envio -->
+        <div id="previews-container" class="previews-grid"></div>
+
+        <!-- Barra de Ação de Envio -->
+        <div class="barra-envio">
+          <div class="ds-card-subtitle" id="resumo-tamanho-total">0 arquivos selecionados</div>
+          <button type="button" id="btn-enviar-lote" class="btn btn-primary" disabled>
+            <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-send"/></svg> Enviar e processar
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- ABA 2: PROCESSAMENTO (Item 4 do Backlog) -->
+    <!-- =============================================================== -->
+    <section id="tab-processamento" class="tab-content" style="display: none;">
+      <div class="ds-card">
+        <div class="ds-card-header">
+          <div>
+            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-clock"/></svg> Fila de Processamento em Tempo Real</h2>
+            <p class="ds-card-subtitle">Clique em um envio para ver o passo a passo, o arquivo e o que a IA leu</p>
+          </div>
+          <button type="button" id="btn-reprocessar-pendentes" class="btn btn-secondary btn-sm">
+            <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-refresh-cw"/></svg> Reprocessar fila
+          </button>
+        </div>
+
+        <!-- Lista de envios: clique numa linha para abrir o detalhamento -->
+        <div class="ds-table-wrapper">
+          <table class="ds-table ds-table--click">
+            <thead>
+              <tr>
+                <th>Enviado em</th>
+                <th>Cliente</th>
+                <th>Arquivo</th>
+                <th>Situação</th>
+                <th>Tentativas</th>
+                <th>Lançamentos</th>
+                <th><span class="sr-only">Detalhar</span></th>
+              </tr>
+            </thead>
+            <tbody id="lista-fila-processamento">
+              <tr><td colspan="7" class="empty-state">Carregando envios…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- ABA 3: NOVAS ENTRADAS (Item 5.3 do Backlog) -->
+    <!-- =============================================================== -->
+    <section id="tab-novas-entradas" class="tab-content" style="display: none;">
+      <div class="ds-card">
+        <div class="ds-card-header">
+          <div>
+            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-sparkles"/></svg> Novas Entradas Analisadas pela IA</h2>
+            <p class="ds-card-subtitle">Comprovantes recém-extraídos aguardando conferência antes de ir ao painel oficial</p>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button type="button" id="btn-confirmar-todos" class="btn btn-primary btn-sm">
+              <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-circle-check"/></svg> Confirmar todos (<span id="count-confirmar-todos">0</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabela de Novas Entradas -->
+        <div class="ds-table-wrapper">
+          <table class="ds-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Estabelecimento</th>
+                <th>Cliente</th>
+                <th>Categoria</th>
+                <th>Valor Total</th>
+                <th>Confiança</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-novas-entradas">
+              <tr>
+                <td colspan="8" class="empty-state">Carregando entradas...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- ABA 4: HISTÓRICO DE ENVIOS (Item 4 do Backlog) -->
+    <!-- =============================================================== -->
+    <section id="tab-historico-envios" class="tab-content" style="display: none;">
+      <div class="ds-card">
+        <div class="ds-card-header">
+          <div>
+            <h2 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-folder-open"/></svg> Histórico Consolidado de Envios</h2>
+            <p class="ds-card-subtitle">Registro de todos os lotes enviados, fotos e auditoria</p>
+          </div>
+          <input type="text" id="filtro-busca-historico" class="ds-input" placeholder="Buscar por estabelecimento, cliente..." style="max-width: 280px;">
+        </div>
+
+        <div class="ds-table-wrapper">
+          <table class="ds-table">
+            <thead>
+              <tr>
+                <th>Data / Hora</th>
+                <th>Cliente</th>
+                <th>Qtd Imagens</th>
+                <th>Tamanho</th>
+                <th>Status</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-historico-envios">
+              <tr>
+                <td colspan="6" class="empty-state">Carregando histórico...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =============================================================== -->
+    <!-- ABA 5: DASHBOARD DE CONTROLE (Item 5 do Backlog) -->
+    <!-- =============================================================== -->
+    <section id="tab-dashboard" class="tab-content" style="display: none;">
+      
+      <!-- Cards de Resumo Executivo -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
+        <div class="ds-card" style="margin-bottom: 0;">
+          <div class="ds-card-subtitle">Total registrado</div>
+          <div id="dash-total-periodo" class="kpi">R$ 0,00</div>
+        </div>
+        <div class="ds-card" style="margin-bottom: 0;">
+          <div class="ds-card-subtitle">Comprovantes</div>
+          <div id="dash-total-comprovantes" class="kpi">0</div>
+        </div>
+        <div class="ds-card" style="margin-bottom: 0;">
+          <div class="ds-card-subtitle">Ticket médio</div>
+          <div id="dash-ticket-medio" class="kpi">R$ 0,00</div>
+        </div>
+        <div class="ds-card" style="margin-bottom: 0;">
+          <div class="ds-card-subtitle">Pendentes de Revisão</div>
+          <div id="dash-pendentes-revisao" class="kpi">0</div>
+        </div>
+      </div>
+
+      <!-- Distribuição por Categoria e Top Estabelecimentos -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+        <div class="ds-card">
+          <h3 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-tag"/></svg> Gastos por Categoria</h3>
+          <div id="dash-gastos-categoria" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div class="empty-state">Sem dados de categorias.</div>
+          </div>
+        </div>
+
+        <div class="ds-card">
+          <h3 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-store"/></svg> Top Estabelecimentos</h3>
+          <div id="dash-top-estabelecimentos" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+            <div class="empty-state">Sem dados de estabelecimentos.</div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ================================================================= -->
+  <!-- Modais do Sistema -->
+  <!-- ================================================================= -->
+
+  <!-- Modal 1: Novo Cliente -->
+  <div id="modal-novo-cliente" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="ds-card-title">Cadastrar Novo Cliente</h3>
+        <button type="button" class="btn btn-ghost btn-sm btn-fechar-modal" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 14px;">
+          <label class="ds-label" for="input-novo-cliente-nome">Nome do Cliente / Razão Social <span class="req">*</span></label>
+          <input type="text" id="input-novo-cliente-nome" class="ds-input" placeholder="Ex: Padaria Central">
+        </div>
+        <div>
+          <label class="ds-label" for="input-novo-cliente-doc">Documento (CNPJ ou CPF opcional)</label>
+          <input type="text" id="input-novo-cliente-doc" class="ds-input" placeholder="00.000.000/0000-00">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-fechar-modal">Cancelar</button>
+        <button type="button" id="btn-salvar-novo-cliente" class="btn btn-primary">Salvar cliente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Visualizar Comprovante Original e Detalhamento Completo -->
+  <div id="modal-ver-comprovante" class="modal-overlay">
+    <div class="modal-content modal-content--lg">
+      <div class="modal-header">
+        <h3 class="ds-card-title"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-search"/></svg> Detalhamento do Comprovante</h3>
+        <button type="button" class="btn btn-ghost btn-sm btn-fechar-modal" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-x"/></svg></button>
+      </div>
+      <div class="modal-body modal-body--split">
+        <!-- Lado Esquerdo: Foto em Alta Resolução -->
+        <div class="detalhe-foto">
+          <img id="img-modal-comprovante" src="" alt="Comprovante">
+        </div>
+
+        <!-- Lado Direito: Dados Extraídos pela IA -->
+        <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem;">
+          <div>
+            <div class="detalhe-rotulo">Estabelecimento</div>
+            <div id="modal-detalhe-estab" style="font-weight: 600; font-size: 15px;">-</div>
+            <div id="modal-detalhe-cnpj" class="ds-card-subtitle">-</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <div class="detalhe-rotulo">Data de Emissão</div>
+              <div id="modal-detalhe-data" style="font-weight: 600;">-</div>
+            </div>
+            <div>
+              <div class="detalhe-rotulo">Valor Total</div>
+              <div id="modal-detalhe-valor" style="font-weight: 600; font-size: 18px; color: var(--c-ok-fg);">-</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div>
+              <div class="detalhe-rotulo">Categoria</div>
+              <div id="modal-detalhe-categoria" style="font-weight: 600; color: var(--c-strong);">-</div>
+            </div>
+            <div>
+              <div class="detalhe-rotulo">Pagamento</div>
+              <div id="modal-detalhe-pagamento" style="font-weight: 600;">-</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="detalhe-rotulo">Resumo dos Itens Extraídos</div>
+            <div id="modal-detalhe-itens" class="detalhe-itens">-</div>
+          </div>
+
+          <div>
+            <div class="detalhe-rotulo">Nível de Confiança da IA</div>
+            <span id="modal-detalhe-confianca" class="badge badge-alta" style="margin-top: 4px;">ALTA</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-fechar-modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Painel lateral (ERIC Drawer, 520px): detalhamento do envio -->
+  <div id="drawer-veu" class="drawer-veu" hidden></div>
+  <aside id="drawer-envio" class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-titulo" hidden>
+    <header class="drawer__head">
+      <div style="min-width: 0; flex: 1;">
+        <div class="ds-card-subtitle" id="drawer-kicker" style="margin: 0;">Detalhamento do envio</div>
+        <h2 id="drawer-titulo" class="drawer__title">—</h2>
+      </div>
+      <span id="drawer-situacao" class="badge badge-neutro">—</span>
+      <button type="button" id="drawer-fechar" class="btn btn-ghost btn-sm btn-icon" aria-label="Fechar detalhamento"><svg class="ic" aria-hidden="true"><use href="/icons.svg#i-x"/></svg></button>
+    </header>
+    <div id="drawer-corpo" class="drawer__body"></div>
+    <footer id="drawer-rodape" class="drawer__foot"></footer>
+  </aside>
+
+  <!-- Scripts -->
+  <script src="/compressor.js"></script>
+  <script src="/sync.js"></script>
+  <script src="/app.js"></script>
+
+</body>
+</html>
