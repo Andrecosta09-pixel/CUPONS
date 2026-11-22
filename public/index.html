@@ -3,9 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#0a3d78">
   <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cupom Fácil">
   <title>Cupom Fácil — Gestão de Compras</title>
+  <link rel="icon" type="image/png" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <script src="/tema.js"></script>
@@ -177,6 +182,10 @@
       <span id="topbar-titulo" class="topbar-titulo">Novo Envio</span>
     </div>
     <div class="app-topbar__right">
+      <button type="button" id="btn-instalar-pwa" class="btn btn-secondary btn-sm" hidden>
+        <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-download"/></svg>
+        <span class="topbar-instalar-lbl">Instalar app</span>
+      </button>
       <button type="button" id="btn-tema" class="btn btn-ghost btn-sm" data-toggle-tema aria-label="Ativar modo escuro" aria-pressed="false">
         <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-moon"/></svg>
         <span class="topbar-tema-lbl" data-tema-label>Escuro</span>
@@ -371,6 +380,26 @@
     </section>
 
   </main>
+
+  <!-- BottomNav mobile (< 600px, ERIC Design System) -->
+  <nav class="bottom-nav" aria-label="Navegação rápida">
+    <button type="button" class="bottom-nav__item active" data-tab-alvo="tab-novo-envio" aria-current="page">
+      <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-upload"/></svg>
+      <span>Enviar</span>
+    </button>
+    <button type="button" class="bottom-nav__item" data-tab-alvo="tab-processamento">
+      <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-clock"/></svg>
+      <span>Fila</span>
+    </button>
+    <button type="button" class="bottom-nav__item" data-tab-alvo="tab-novas-entradas">
+      <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-sparkles"/></svg>
+      <span>Entradas</span>
+    </button>
+    <button type="button" class="bottom-nav__item" data-tab-alvo="tab-dashboard">
+      <svg class="ic" aria-hidden="true"><use href="/icons.svg#i-chart-column"/></svg>
+      <span>Painel</span>
+    </button>
+  </nav>
   </div><!-- /app-main-wrap -->
 
   <!-- ================================================================= -->
@@ -460,6 +489,7 @@
   <script src="/auth.js"></script>
   <script src="/dashboard.js"></script>
   <script src="/admin.js"></script>
+  <script src="/pwa.js"></script>
   <script src="/app.js"></script>
 
 </body>
