@@ -1,5 +1,5 @@
 // =============================================================================
-// API/EU.JS — Retorna nome e e-mail do cliente do usuário logado.
+// API/EU.JS — Retorna dados do cliente logado (incluindo flag eh_admin).
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
@@ -20,5 +20,10 @@ export default async function handler(req, res) {
   const cliente = await autenticar(req, res, supabase);
   if (!cliente) return;
 
-  return res.status(200).json({ nome: cliente.nome, email: cliente.email });
+  return res.status(200).json({
+    nome: cliente.nome,
+    email: cliente.email,
+    eh_admin: Boolean(cliente.eh_admin),
+    limite_mensal_envios: cliente.limite_mensal_envios
+  });
 }

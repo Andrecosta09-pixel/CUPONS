@@ -6,7 +6,7 @@
 /**
  * Nome e versão do cache. Incrementar a versão força atualização.
  */
-const CACHE_NAME = 'cupom-fiscal-v7';
+const CACHE_NAME = 'cupom-fiscal-v8';
 
 /**
  * Arquivos estáticos para cache (shell da aplicação).
@@ -17,9 +17,11 @@ const ARQUIVOS_CACHE = [
   '/index.html',
   '/styles.css',
   '/icons.svg',
+  '/tema.js',
   '/avisos.js',
   '/auth.js',
   '/dashboard.js',
+  '/admin.js',
   '/compressor.js',
   '/sync.js',
   '/app.js',

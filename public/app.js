@@ -44,24 +44,48 @@ window.iniciarApp = function () {
 // 1. Navegação por Abas (Design System)
 // ---------------------------------------------------------------------------
 function configurarNavegacaoAbas() {
+  const sidebar = document.getElementById('app-sidebar');
+  const veu = document.getElementById('sidebar-veu');
+  const btnAbrir = document.getElementById('btn-abrir-sidebar');
+  const btnFechar = document.getElementById('btn-fechar-sidebar');
+  const topbarTitulo = document.getElementById('topbar-titulo');
+
+  const fecharSidebar = () => {
+    sidebar?.classList.remove('open');
+    if (veu) veu.hidden = true;
+  };
+  const abrirSidebar = () => {
+    sidebar?.classList.add('open');
+    if (veu) veu.hidden = false;
+  };
+
+  btnAbrir?.addEventListener('click', abrirSidebar);
+  btnFechar?.addEventListener('click', fecharSidebar);
+  veu?.addEventListener('click', fecharSidebar);
+
   const tabs = document.querySelectorAll('.nav-tab');
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
-      tabs.forEach((t) => t.classList.remove('active'));
+      tabs.forEach((t) => { t.classList.remove('active'); t.removeAttribute('aria-current'); });
       tab.classList.add('active');
+      tab.setAttribute('aria-current', 'page');
 
       const targetId = tab.dataset.tab;
       estado.abaAtiva = targetId;
+      if (topbarTitulo) topbarTitulo.textContent = tab.dataset.titulo || tab.textContent.trim();
 
       document.querySelectorAll('.tab-content').forEach((sec) => {
         sec.style.display = sec.id === targetId ? 'block' : 'none';
       });
+
+      fecharSidebar();
 
       // Disparar atualizações específicas da aba
       if (targetId === 'tab-processamento') carregarFilaProcessamento();
       if (targetId === 'tab-novas-entradas') carregarNovasEntradas();
       if (targetId === 'tab-historico-envios') carregarHistoricoEnvios();
       if (targetId === 'tab-dashboard') carregarDashboard();
+      if (targetId === 'tab-admin' && typeof window.carregarAdmin === 'function') window.carregarAdmin();
     });
   });
 }
@@ -583,7 +607,11 @@ document.getElementById('btn-confirmar-todos').addEventListener('click', async (
   });
   if (!sim) return;
   try {
-    const res = await fetch('/api/confirmar-todas', { method: 'POST' });
+    const res = await fetch('/api/confirmar-entrada', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ todas: true })
+    });
     if (!res.ok) throw new Error('o servidor recusou a confirmação');
     toast(qtd === 1 ? '1 lançamento confirmado.' : `${qtd} lançamentos confirmados.`);
     carregarNovasEntradas();

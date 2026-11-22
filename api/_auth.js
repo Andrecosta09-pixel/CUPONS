@@ -6,11 +6,13 @@
 //       if (!cliente) return;   // já respondeu 401/403
 // =============================================================================
 
+const ADMIN_FALLBACK_EMAIL = 'trab.andrecosta@gmail.com';
+
 /**
  * @param {Object} req - Requisição (lê o header Authorization: Bearer <token>).
  * @param {Object} res - Resposta (usada para responder 401/403/503).
  * @param {Object} supabase - Cliente Supabase com service_role.
- * @returns {Promise<{id: string, nome: string, email: string} | null>}
+ * @returns {Promise<{id: string, nome: string, email: string, eh_admin: boolean, limite_mensal_envios: number|null} | null>}
  */
 export async function autenticar(req, res, supabase) {
   const cab = req.headers['authorization'] || '';
@@ -32,12 +34,31 @@ export async function autenticar(req, res, supabase) {
     return null;
   }
 
-  const { data: achados, error: erroBanco } = await supabase
+  // Tenta ler com as colunas novas (eh_admin, limite_mensal_envios); fallback se schema_v5 ainda não foi aplicado
+  let achados = null;
+  let erroBanco = null;
+  let usouFallback = false;
+
+  const q1 = await supabase
     .from('clientes')
-    .select('id, nome, email')
+    .select('id, nome, email, eh_admin, limite_mensal_envios')
     .eq('email', email)
     .eq('ativo', true)
     .limit(1);
+
+  if (q1.error) {
+    usouFallback = true;
+    const q2 = await supabase
+      .from('clientes')
+      .select('id, nome, email')
+      .eq('email', email)
+      .eq('ativo', true)
+      .limit(1);
+    achados = q2.data;
+    erroBanco = q2.error;
+  } else {
+    achados = q1.data;
+  }
 
   if (erroBanco) {
     res.status(503).json({ erro: 'Não foi possível consultar o cadastro agora. Tente de novo.' });
@@ -47,5 +68,13 @@ export async function autenticar(req, res, supabase) {
     res.status(403).json({ erro: 'Seu acesso ainda não foi liberado. Fale com o administrador.' });
     return null;
   }
-  return achados[0];
+
+  const c = achados[0];
+  return {
+    id: c.id,
+    nome: c.nome,
+    email: c.email,
+    eh_admin: usouFallback ? (email === ADMIN_FALLBACK_EMAIL) : Boolean(c.eh_admin),
+    limite_mensal_envios: typeof c.limite_mensal_envios === 'number' ? c.limite_mensal_envios : null
+  };
 }

@@ -65,6 +65,23 @@ export default async function handler(req, res) {
     if (!clienteLogado) return;
     const cliente = clienteLogado.nome;
 
+    // --- 0.1 Controle de uso: limite mensal de envios (se configurado pelo admin) ---
+    if (clienteLogado.limite_mensal_envios && clienteLogado.limite_mensal_envios > 0) {
+      const agora = new Date();
+      const iniMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1, 0, 0, 0)).toISOString();
+      const { count } = await supabase
+        .from('cupons_fila')
+        .select('id', { count: 'exact', head: true })
+        .eq('cliente', cliente)
+        .gte('criado_em', iniMes);
+
+      if (typeof count === 'number' && count >= clienteLogado.limite_mensal_envios) {
+        return res.status(429).json({
+          erro: `Limite mensal de ${clienteLogado.limite_mensal_envios} envios atingido. Fale com o administrador para ampliar.`
+        });
+      }
+    }
+
     // --- 1. Ler o FormData da requisição ---
     // Na Vercel, o body parser multipart não é automático para o runtime Node.
     // Precisamos parsear manualmente usando a API Web.

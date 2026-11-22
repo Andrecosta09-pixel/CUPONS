@@ -131,9 +131,13 @@
     cliente = c;
     $('tela-auth').hidden = true;
     $('app-shell').hidden = false;
-    $('usuario-nome').textContent = c.nome;
-    $('usuario-nome').title = c.email;
-    $('usuario-inicial').textContent = (c.nome || '?').trim().charAt(0).toUpperCase();
+    const ini = (c.nome || '?').trim().charAt(0).toUpperCase();
+    if ($('usuario-nome')) { $('usuario-nome').textContent = c.nome; $('usuario-nome').title = c.email; }
+    if ($('usuario-inicial')) $('usuario-inicial').textContent = ini;
+    if ($('sidebar-usuario-nome')) $('sidebar-usuario-nome').textContent = c.nome;
+    if ($('sidebar-usuario-email')) $('sidebar-usuario-email').textContent = c.email;
+    if ($('sidebar-usuario-inicial')) $('sidebar-usuario-inicial').textContent = ini;
+    if ($('nav-grupo-admin')) $('nav-grupo-admin').hidden = !c.eh_admin;
     if (typeof window.iniciarApp === 'function') window.iniciarApp();
   }
 
