@@ -72,10 +72,13 @@ Para cada cupom identificado, extraia estritamente:
   "cnpj": "somente 14 digitos numéricos",
   "resumo_itens": "resumo dos itens principais (ex: Frutas, Carnes, Pão, Material)",
   "forma_pagamento": "dinheiro, cartao, pix, etc.",
-  "categoria": "Mercado, Obra / construção, Combustível, Alimentação, Farmácia / saúde, Casa / utilidades, Serviços, ou Outros",
-  "confianca": "alta, media, ou baixa"
+  "categoria": "Supermercado, Frios, Carnes, Hortifruti, Bebidas, Embalagens, Ingredientes, Padaria, Material de limpeza, Descartáveis, ou Outros",
+  "confianca": "alta, media, ou baixa",
+  "itens": [
+    { "nome": "nome legível do produto", "quantidade": 1, "unidade": "un, kg, L, pct, cx", "valor_unitario": 0.00, "valor_total": 0.00 }
+  ]
 }
-Retorne SEMPRE um array JSON puro [ { ... } ]. Sem markdown nem comentários."""
+Extraia TODOS os itens visíveis do cupom no array "itens". Retorne SEMPRE um array JSON puro [ { ... } ]. Sem markdown nem comentários."""
 
         modelos = ["gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
         dados_lista = None

@@ -641,7 +641,20 @@ window.verComprovanteOriginal = async function(cupomId) {
       document.getElementById('modal-detalhe-valor').textContent = (parseFloat(entrada.valor_total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       document.getElementById('modal-detalhe-categoria').textContent = entrada.categoria || 'Outros';
       document.getElementById('modal-detalhe-pagamento').textContent = entrada.forma_pagamento || 'Outros';
-      document.getElementById('modal-detalhe-itens').textContent = entrada.resumo_itens || 'Nenhum item discriminado.';
+      const elItens = document.getElementById('modal-detalhe-itens');
+      const listaItens = entrada.dados_brutos_json && Array.isArray(entrada.dados_brutos_json.itens) ? entrada.dados_brutos_json.itens : [];
+      if (listaItens.length > 0) {
+        elItens.innerHTML = `<div class="ds-table-wrapper"><table class="ds-table ds-table--compact"><thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th></tr></thead><tbody>` +
+          listaItens.map((it) => {
+            const q = Number(it.quantidade || 1);
+            const u = esc(it.unidade || 'un');
+            const vu = it.valor_unitario != null ? reais(it.valor_unitario) : '—';
+            const vt = it.valor_total != null ? reais(it.valor_total) : '—';
+            return `<tr><td class="td-corta" title="${esc(it.nome)}">${esc(it.nome)}</td><td>${q.toLocaleString('pt-BR')} ${u}</td><td class="td-valor">${vu}</td><td class="td-valor">${vt}</td></tr>`;
+          }).join('') + `</tbody></table></div>`;
+      } else {
+        elItens.textContent = entrada.resumo_itens || 'Nenhum item discriminado.';
+      }
       
       const badgeConf = document.getElementById('modal-detalhe-confianca');
       badgeConf.textContent = (entrada.confianca || 'alta').toUpperCase();

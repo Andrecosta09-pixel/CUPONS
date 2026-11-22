@@ -482,12 +482,61 @@ body {
 
 .td-corta { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 
+/* Filtros avançados do Dashboard (Buffet / Detalhamento) */
+.dash-bar-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; padding: 12px 14px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; }
+.dash-bar-filtros .ds-input, .dash-bar-filtros .ds-select { height: 36px; font-size: 13px; width: auto; }
+.dash-busca { flex: 1 1 220px; min-width: 180px; }
+.dash-datas { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dash-datas span { font-size: 12px; color: var(--c-text-2); }
+.dash-datas .ds-input { width: 142px; }
+.dash-bar-acoes { display: inline-flex; gap: 8px; margin-left: auto; align-items: center; }
+
+/* Barras clicáveis (estabelecimentos, itens, dias do gráfico) */
+.hbar-btn { display: block; width: 100%; text-align: left; padding: 8px 10px; margin: -4px -10px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; font: inherit; color: inherit; transition: background .15s var(--e-ease), border-color .15s var(--e-ease); }
+.hbar-btn:hover { background: var(--c-surface-2); border-color: var(--c-border); }
+.hbar-btn:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 1px; }
+.hbar-btn__sub { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--c-text-2); margin-top: 4px; }
+.hbar-btn__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 4px; }
+.hbar-btn__top .ic { flex: none; color: var(--c-text-2); width: 14px; height: 14px; }
+
+.bar-col--click { cursor: pointer; }
+.bar-col--ativo .bar { background: var(--c-strong) !important; }
+.bar-col--ativo .bar-lbl { color: var(--c-strong); font-weight: 600; }
+
+/* Faixa de detalhamento rápido por dia selecionado */
+.dash-dia-detalhe { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--c-border); }
+.dash-dia-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.dash-dia-head strong { font-size: 13px; color: var(--c-strong); }
+
+/* Tabela compacta de itens no modal e no drawer */
+.ds-table--compact th, .ds-table--compact td { padding: 6px 8px; font-size: 12px; }
+.dash-linha--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* Lista de compras dentro do Drawer de Estabelecimento */
+.dr-compra { border: 1px solid var(--c-border); border-radius: 10px; padding: 12px; background: var(--c-surface); margin-bottom: 12px; }
+.dr-compra__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.dr-compra__data { font-size: 13px; font-weight: 600; color: var(--c-strong); }
+.dr-compra__meta { font-size: 12px; color: var(--c-text-2); margin-top: 2px; }
+.dr-compra__val { font-size: 14px; font-weight: 600; color: var(--c-strong); white-space: nowrap; }
+.dr-compra__resumo { font-size: 12px; color: var(--c-text-2); line-height: 18px; }
+.dr-compra__foot { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--c-border); display: flex; justify-content: flex-end; }
+.dr-resumo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.dr-resumo-box { border: 1px solid var(--c-border); border-radius: 10px; padding: 10px; background: var(--c-surface-2); }
+.dr-resumo-box small { display: block; font-size: 11px; color: var(--c-text-2); }
+.dr-resumo-box strong { display: block; font-size: 14px; color: var(--c-strong); margin-top: 2px; white-space: nowrap; }
+
 @media (max-width: 1023px) {
-  .dash-linha--2-1, .dash-linha--3 { grid-template-columns: minmax(0, 1fr); }
+  .dash-linha--2-1, .dash-linha--3, .dash-linha--2 { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 599px) {
   .dash-select { width: 100%; }
   .dash-filtros { width: 100%; }
+  .dash-bar-filtros .ds-input, .dash-bar-filtros .ds-select { height: 44px; font-size: 16px; width: 100%; }
+  .dash-datas { width: 100%; }
+  .dash-datas .ds-input { flex: 1; min-width: 0; }
+  .dash-bar-acoes { width: 100%; margin-left: 0; }
+  .dash-bar-acoes .btn { flex: 1; min-height: 44px; }
+  .dr-resumo-grid { grid-template-columns: 1fr; }
   .seg { width: 100%; } .seg__opt { flex: 1; height: 44px; }
   .link-acao { min-height: 44px; }
   .chart { height: 200px; }

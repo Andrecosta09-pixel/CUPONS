@@ -282,9 +282,19 @@ Campos obrigatórios do JSON:
   "cnpj": "CNPJ do estabelecimento (somente números, 14 dígitos)",
   "valor_total": 0.00,
   "forma_pagamento": "dinheiro, cartão de crédito, cartão de débito, pix, etc.",
-  "categoria": "classificação do tipo de compra: supermercado, padaria, restaurante, material de limpeza, embalagens, ingredientes, bebidas, hortifruti, carnes, outros",
-  "resumo_itens": "resumo dos principais itens comprados, separados por vírgula (máximo 200 caracteres)"
-}`;
+  "categoria": "classificação do tipo de compra: supermercado, frios, carnes, hortifruti, bebidas, embalagens, ingredientes, padaria, material de limpeza, descartáveis, outros",
+  "resumo_itens": "resumo dos principais itens comprados, separados por vírgula (máximo 200 caracteres)",
+  "itens": [
+    {
+      "nome": "nome limpo e legível do produto (sem códigos internos)",
+      "quantidade": 1,
+      "unidade": "un, kg, g, L, ml, pct, cx, fd, etc.",
+      "valor_unitario": 0.00,
+      "valor_total": 0.00
+    }
+  ]
+}
+Extraia TODOS os itens visíveis do cupom no array "itens". Se algum item não tiver quantidade/unidade legível, use quantidade 1 e unidade "un".`;
 
   // Tentativas com backoff para erros transitórios (503, 429)
   const maxTentativas = 1; // uma tentativa por modelo; o fallback é trocar de modelo
@@ -315,7 +325,7 @@ Campos obrigatórios do JSON:
           ],
           generationConfig: {
             temperature: 0.1,         // Baixa temperatura para respostas consistentes
-            maxOutputTokens: 4096,    // foto com vários cupons gera lista longa; 1024 cortava o JSON
+            maxOutputTokens: 6144,    // suporta cupons longos com lista detalhada de itens
             responseMimeType: 'application/json'
           }
         })
@@ -404,11 +414,15 @@ function parsearRespostaGemini(texto) {
     if (Array.isArray(bruto)) {
       if (bruto.length === 0) throw new Error('lista vazia');
       const lista = bruto.map(normalizarCupom);
-      lista.forEach((c, i) => { c.dados_brutos = bruto[i]; });
+      lista.forEach((c, i) => {
+        c.dados_brutos = { ...(bruto[i] || {}), itens: c._itens };
+        delete c._itens;
+      });
       return lista;
     }
     const unico = normalizarCupom(bruto);
-    unico.dados_brutos = bruto;
+    unico.dados_brutos = { ...(bruto || {}), itens: unico._itens };
+    delete unico._itens;
     return [unico];
 
   } catch (erroJson) {
@@ -416,19 +430,52 @@ function parsearRespostaGemini(texto) {
   }
 }
 
+function normalizarItens(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .map((it) => {
+      if (!it || typeof it !== 'object') return null;
+      const nome = typeof it.nome === 'string' ? it.nome.trim().slice(0, 140) : '';
+      if (!nome) return null;
+      const num = (v) => {
+        if (typeof v === 'number' && !isNaN(v)) return v;
+        if (typeof v === 'string') {
+          const p = parseFloat(v.replace(/\./g, '').replace(',', '.'));
+          return isNaN(p) ? null : p;
+        }
+        return null;
+      };
+      const qtd = num(it.quantidade);
+      const unit = num(it.valor_unitario);
+      const tot = num(it.valor_total);
+      const unidade = typeof it.unidade === 'string' && it.unidade.trim() ? it.unidade.trim().slice(0, 16) : 'un';
+      return {
+        nome,
+        quantidade: qtd !== null && qtd > 0 ? qtd : 1,
+        unidade,
+        valor_unitario: unit !== null && unit >= 0 ? unit : (tot !== null && qtd > 0 ? Number((tot / qtd).toFixed(2)) : null),
+        valor_total: tot !== null && tot >= 0 ? tot : (unit !== null && qtd > 0 ? Number((unit * qtd).toFixed(2)) : 0)
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizarCupom(dados) {
-  {
-    // Sanitizar e validar campos
-    return {
-      data_emissao: validarData(dados.data_emissao),
-      estabelecimento: typeof dados.estabelecimento === 'string' ? dados.estabelecimento.trim() : null,
-      cnpj: sanitizarCnpj(dados.cnpj),
-      valor_total: typeof dados.valor_total === 'number' ? dados.valor_total : parseFloat(dados.valor_total) || null,
-      forma_pagamento: typeof dados.forma_pagamento === 'string' ? dados.forma_pagamento.trim().toLowerCase() : null,
-      categoria: typeof dados.categoria === 'string' ? dados.categoria.trim().toLowerCase() : null,
-      resumo_itens: typeof dados.resumo_itens === 'string' ? dados.resumo_itens.substring(0, 500) : null
-    };
+  const itens = normalizarItens(dados && dados.itens);
+  let resumo = typeof dados.resumo_itens === 'string' ? dados.resumo_itens.trim().substring(0, 500) : null;
+  if (!resumo && itens.length > 0) {
+    resumo = itens.map((i) => i.nome).join(', ').substring(0, 500);
   }
+  return {
+    data_emissao: validarData(dados.data_emissao),
+    estabelecimento: typeof dados.estabelecimento === 'string' ? dados.estabelecimento.trim() : null,
+    cnpj: sanitizarCnpj(dados.cnpj),
+    valor_total: typeof dados.valor_total === 'number' ? dados.valor_total : parseFloat(dados.valor_total) || null,
+    forma_pagamento: typeof dados.forma_pagamento === 'string' ? dados.forma_pagamento.trim().toLowerCase() : null,
+    categoria: typeof dados.categoria === 'string' ? dados.categoria.trim().toLowerCase() : null,
+    resumo_itens: resumo,
+    _itens: itens
+  };
 }
 
 // ---------------------------------------------------------------------------
