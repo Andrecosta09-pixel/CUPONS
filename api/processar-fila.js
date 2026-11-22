@@ -5,6 +5,9 @@
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
+import { autenticar } from './_auth.js';
+
+export const config = { maxDuration: 60 };
 
 /**
  * Configuração do worker de processamento.
@@ -45,25 +48,25 @@ export default async function handler(req, res) {
     return res.status(405).json({ erro: 'Método não permitido.' });
   }
 
-  // Verificar autenticação do cron (header da Vercel ou query param)
+  // Verificar se é chamada do cron (CRON_SECRET ou x-vercel-cron) ou do usuário logado
   const authHeader = req.headers['authorization'];
   const cronSecret = process.env.CRON_SECRET;
-
-  // A Vercel envia automaticamente o header para cron jobs no plano Pro+.
-  // Para planos gratuitos, validamos via CRON_SECRET no header Authorization.
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // Verificar também o header x-vercel-cron (Vercel Cron nativo)
-    if (!req.headers['x-vercel-cron']) {
-      return res.status(401).json({ erro: 'Não autorizado. Forneça CRON_SECRET.' });
-    }
-  }
+  const ehCron = Boolean(req.headers['x-vercel-cron']) || (Boolean(cronSecret) && authHeader === `Bearer ${cronSecret}`);
 
   const supabase = criarClienteSupabase();
+  let clienteFiltro = null;
+
+  if (!ehCron) {
+    const cliente = await autenticar(req, res, supabase);
+    if (!cliente) return;
+    clienteFiltro = cliente.nome;
+  }
+
   const resultados = { processados: 0, falhas: 0, revisaoManual: 0, erros: [] };
 
   try {
     // --- 1. Buscar lote de cupons pendentes ---
-    const { data: lote, error: erroLote } = await supabase
+    let consulta = supabase
       .from('cupons_fila')
       .select('*')
       .eq('status', 'pendente')
@@ -71,6 +74,12 @@ export default async function handler(req, res) {
       .or('proxima_tentativa_em.is.null,proxima_tentativa_em.lte.' + new Date().toISOString())
       .order('criado_em', { ascending: true })
       .limit(WORKER_CONFIG.TAMANHO_LOTE);
+
+    if (clienteFiltro) {
+      consulta = consulta.eq('cliente', clienteFiltro);
+    }
+
+    const { data: lote, error: erroLote } = await consulta;
 
     if (erroLote) {
       console.error('[WORKER] Erro ao buscar fila:', erroLote);

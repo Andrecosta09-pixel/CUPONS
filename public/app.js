@@ -244,6 +244,9 @@ async function executarEnvioLote() {
     renderizarMiniaturas();
     toast('Envio feito. A IA já está lendo os comprovantes.');
 
+    // Dispara a leitura na hora (na Vercel, onde o cron do plano Hobby é diário)
+    dispararProcessamentoFila();
+
     // Alternar para aba Processamento
     const tabProcessamento = document.querySelector('[data-tab="tab-processamento"]');
     if (tabProcessamento) tabProcessamento.click();
@@ -320,10 +323,25 @@ async function carregarFilaProcessamento() {
 
     // Se o painel está aberto, mantém o conteúdo atualizado com o polling
     if (estado.envioAberto) renderizarDrawerEnvio(estado.envioAberto);
+
+    // Se houver envio pendente na fila, aciona a leitura imediatamente
+    if (estado.fila.some(i => i.status === 'pendente')) {
+      dispararProcessamentoFila();
+    }
   } catch (e) {
     console.error('Erro na fila:', e);
     tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Não foi possível carregar os envios. Tente de novo em instantes.</td></tr>';
   }
+}
+
+let processandoFilaAgora = false;
+function dispararProcessamentoFila() {
+  if (processandoFilaAgora) return;
+  processandoFilaAgora = true;
+  fetch('/api/processar-fila', { method: 'POST' })
+    .then(r => { if (r.ok) carregarFilaProcessamento(); })
+    .catch(() => {})
+    .finally(() => { processandoFilaAgora = false; });
 }
 
 // ---- Painel lateral: detalhamento do envio ----
@@ -463,6 +481,7 @@ async function reprocessarEnvio(id, botao) {
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).erro || 'Falha ao reenviar');
     toast('Leitura reiniciada. Acompanhe o passo a passo aqui.', 'info');
+    dispararProcessamentoFila();
     await carregarFilaProcessamento();
   } catch (e) {
     toast('Não foi possível tentar de novo: ' + e.message, 'erro');
