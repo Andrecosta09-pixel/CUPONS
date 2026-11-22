@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/processar-fila",
-      "schedule": "*/3 * * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "headers": [
