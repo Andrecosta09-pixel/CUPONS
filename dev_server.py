@@ -72,7 +72,7 @@ Para cada cupom identificado, extraia estritamente:
   "cnpj": "somente 14 digitos numéricos",
   "resumo_itens": "resumo dos itens principais (ex: Frutas, Carnes, Pão, Material)",
   "forma_pagamento": "dinheiro, cartao, pix, etc.",
-  "categoria": "Supermercado, Frios, Carnes, Hortifruti, Bebidas, Embalagens, Ingredientes, Padaria, Material de limpeza, Descartáveis, ou Outros",
+  "categoria": "Proteínas & Frios, Mercearia & Secos, Hortifruti & Padaria, Embalagens & Descartáveis, Limpeza & Utensílios, Combustível & Logística, ou Outros",
   "confianca": "alta, media, ou baixa",
   "itens": [
     { "nome": "nome legível do produto", "quantidade": 1, "unidade": "un, kg, L, pct, cx", "valor_unitario": 0.00, "valor_total": 0.00 }

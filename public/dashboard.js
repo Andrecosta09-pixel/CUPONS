@@ -1,11 +1,25 @@
 // =============================================================================
-// DASHBOARD.JS — Painel de controle detalhado para compras e buffet (ERIC):
-// filtros (período + datas personalizadas, estabelecimento, categoria, busca por
-// item), KPIs com comparação, gráfico clicável por dia/mês, itens mais comprados,
-// estabelecimentos clicáveis (abre drawer com compras e itens), tabela detalhada
-// clicável (abre modal com foto + tabela de itens) e exportação CSV para Excel.
+// DASHBOARD.JS — Painel de Compras focado em empresas de Buffet (ERIC 1.2):
+// - Filtros: período (+ personalizado), busca por item/estabelecimento, categoria
+// - KPIs limpos: Total gasto, Comprovantes/Itens, Ticket médio
+// - Grade: Evolução diária (clicável), Distribuição por categoria ("Outros" ao final),
+//   Ranking de insumos (total, qtd + unidade e preço médio) e Principais estabelecimentos
+//   (total, nº compras, ticket médio + drawer com filiais/CNPJ e edição do Nome Canônico)
+// - Tabela de compras limpa (Data, Estabelecimento, Itens, Categoria, Valor),
+//   destacando status apenas quando pendente de conferência.
+// - Sem bloco de Forma de pagamento. Exportação CSV local pronta para Excel.
 // =============================================================================
 (function () {
+  const CATEGORIAS_BUFFET = [
+    'Proteínas & Frios',
+    'Mercearia & Secos',
+    'Hortifruti & Padaria',
+    'Embalagens & Descartáveis',
+    'Limpeza & Utensílios',
+    'Combustível & Logística',
+    'Outros'
+  ];
+
   const PERIODOS = [
     { id: '7', rotulo: '7 dias', dias: 7 },
     { id: '30', rotulo: '30 dias', dias: 30 },
@@ -14,6 +28,7 @@
     { id: 'custom', rotulo: 'Personalizado', dias: null }
   ];
   const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
   const dash = {
     periodo: '30',
     dataIni: '',
@@ -40,6 +55,11 @@
   const iniDia = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 
+  function formatarCnpj(cnpj) {
+    const d = String(cnpj || '').replace(/\D/g, '');
+    return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : '';
+  }
+
   function parseIso(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
     return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
@@ -50,9 +70,12 @@
   }
 
   function itensDe(e) {
+    if (Array.isArray(e?.itens_json) && e.itens_json.length > 0) {
+      return e.itens_json.filter((it) => it && (it.nome_canonico || it.nome));
+    }
     const bruto = e && e.dados_brutos_json;
     if (bruto && Array.isArray(bruto.itens) && bruto.itens.length > 0) {
-      return bruto.itens.filter((it) => it && it.nome);
+      return bruto.itens.filter((it) => it && (it.nome_canonico || it.nome));
     }
     return [];
   }
@@ -60,7 +83,7 @@
   function resumoItensTexto(e) {
     const lista = itensDe(e);
     if (lista.length > 0) {
-      const nomes = lista.slice(0, 3).map((i) => i.nome).join(', ');
+      const nomes = lista.slice(0, 3).map((i) => i.nome_canonico || i.nome).join(', ');
       return lista.length > 3 ? `${nomes} (+${lista.length - 3})` : nomes;
     }
     return e.resumo_itens || '—';
@@ -69,9 +92,9 @@
   function agrupar(lista, chave) {
     const mapa = new Map();
     lista.forEach((e) => {
-      const k = String(chave(e) || 'Não informado').trim();
+      const k = String(chave(e) || 'Não identificado').trim();
       const kk = norm(k);
-      const o = mapa.get(kk) || { nome: cap(k), raw: k, total: 0, qtd: 0 };
+      const o = mapa.get(kk) || { nome: k, raw: k, total: 0, qtd: 0 };
       o.total += Number(e.valor_total) || 0;
       o.qtd += 1;
       mapa.set(kk, o);
@@ -79,7 +102,19 @@
     return [...mapa.values()].sort((a, b) => b.total - a.total);
   }
 
-  function agruparItens(lista) {
+  function agruparCategorias(lista) {
+    const grupos = agrupar(lista, (e) => e.categoria || 'Outros');
+    // Mantém "Outros" sempre como item residual ao final
+    return grupos.sort((a, b) => {
+      const aOut = norm(a.nome) === 'outros';
+      const bOut = norm(b.nome) === 'outros';
+      if (aOut && !bOut) return 1;
+      if (!aOut && bOut) return -1;
+      return b.total - a.total;
+    });
+  }
+
+  function agruparInsumos(lista) {
     const mapa = new Map();
     let temEstruturado = false;
     lista.forEach((e) => {
@@ -87,9 +122,11 @@
       if (estruturados.length > 0) {
         temEstruturado = true;
         estruturados.forEach((it) => {
-          const chave = norm(it.nome);
-          if (!chave) return;
-          const o = mapa.get(chave) || { nome: it.nome.trim(), total: 0, qtd: 0, compras: 0, unidade: it.unidade || 'un' };
+          const nome = String(it.nome_canonico || it.nome || '').trim();
+          const unidade = String(it.unidade || 'un').trim() || 'un';
+          const chave = `${norm(nome)}|${norm(unidade)}`;
+          if (!norm(nome)) return;
+          const o = mapa.get(chave) || { nome, unidade, total: 0, qtd: 0, compras: 0 };
           o.total += Number(it.valor_total) || 0;
           o.qtd += Number(it.quantidade) || 1;
           o.compras += 1;
@@ -100,13 +137,16 @@
           const limpo = parte.trim();
           const chave = norm(limpo);
           if (!chave || chave.length < 2) return;
-          const o = mapa.get(chave) || { nome: cap(limpo), total: 0, qtd: 0, compras: 0, unidade: '' };
+          const o = mapa.get(chave) || { nome: cap(limpo), unidade: '', total: 0, qtd: 0, compras: 0 };
           o.compras += 1;
           mapa.set(chave, o);
         });
       }
     });
-    const arr = [...mapa.values()];
+    const arr = [...mapa.values()].map((it) => ({
+      ...it,
+      precoMedio: it.total > 0 && it.qtd > 0 ? it.total / it.qtd : null
+    }));
     arr.sort((a, b) => (b.total !== a.total ? b.total - a.total : b.compras - a.compras));
     return { lista: arr, temEstruturado };
   }
@@ -127,9 +167,10 @@
       const q = norm(dash.busca);
       res = res.filter((e) => {
         if (norm(e.estabelecimento).includes(q)) return true;
+        if (norm(e.dados_brutos_json?.estabelecimento_original).includes(q)) return true;
         if (norm(e.categoria).includes(q)) return true;
         if (norm(e.resumo_itens).includes(q)) return true;
-        return itensDe(e).some((it) => norm(it.nome).includes(q));
+        return itensDe(e).some((it) => norm(it.nome_canonico || it.nome).includes(q));
       });
     }
     return res;
@@ -169,7 +210,7 @@
     return `<span class="delta">${ic(ico)} ${sinal}${v}%</span><span class="kpi__cmp">vs. período anterior</span>`;
   }
 
-  // ---- Gráfico de barras: gastos ao longo do tempo (clicável por dia/mês) ----
+  // ---- Gráfico de barras: evolução diária/mensal (clicável) ----
   function serieTempo(atual, ini, fim) {
     const dias = Math.max(1, Math.round((fim - ini) / 86400000) + 1);
     const mensal = dias > 31;
@@ -207,11 +248,11 @@
   function graficoTempo(atual, ini, fim) {
     const { itens, mensal } = serieTempo(atual, ini, fim);
     const max = Math.max(...itens.map((i) => i.total), 0);
-    if (max === 0) return { titulo: 'Sem gastos neste período', html: vazio('Nenhum comprovante encontrado para os filtros aplicados.'), baldes: [] };
+    if (max === 0) return { titulo: 'Evolução diária de gastos', html: vazio('Nenhuma compra encontrada para os filtros aplicados.') };
     const topo = escalaBonita(max);
     const iMax = itens.findIndex((i) => i.total === max);
     const passo = itens.length > 16 ? Math.ceil(itens.length / 8) : 1;
-    const titulo = `Maior gasto ${mensal ? 'do mês' : 'do dia'}: ${reais(max)} em ${itens[iMax].longo}`;
+    const titulo = `Pico de compras: ${reais(max)} em ${itens[iMax].longo}`;
     const resumo = `${titulo}. Total no período: ${reais(soma(atual))} em ${atual.length} comprovantes.`;
 
     if (dash.verDados) {
@@ -219,7 +260,7 @@
         <tr class="linha-envio" tabindex="0" role="button" data-dia-chave="${esc(i.chave)}">
           <td>${esc(i.longo)}</td><td>${i.qtd}</td><td class="td-valor">${reais(i.total)}</td>
         </tr>`).join('');
-      return { titulo, resumo, baldes: itens, html: `<div class="ds-table-wrapper"><table class="ds-table ds-table--click"><thead><tr><th>${mensal ? 'Mês' : 'Dia'}</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table></div>` };
+      return { titulo, resumo, html: `<div class="ds-table-wrapper"><table class="ds-table ds-table--click"><thead><tr><th>${mensal ? 'Mês' : 'Dia'}</th><th>Comprovantes</th><th>Total</th></tr></thead><tbody>${linhas}</tbody></table></div>` };
     }
 
     const barras = itens.map((i, idx) => {
@@ -242,7 +283,7 @@
           <button type="button" class="btn btn-ghost btn-sm" id="dash-fechar-dia">Fechar dia</button>
         </div>
         <div class="ds-table-wrapper"><table class="ds-table ds-table--click ds-table--compact">
-          <thead><tr><th>Estabelecimento</th><th>Itens comprados</th><th>Valor</th><th><span class="sr-only">Abrir</span></th></tr></thead>
+          <thead><tr><th>Estabelecimento</th><th>Itens</th><th>Valor</th><th><span class="sr-only">Abrir</span></th></tr></thead>
           <tbody>${baldeAtivo.itens.map((e) => `
             <tr class="linha-envio" tabindex="0" role="button" data-abrir-cupom="${esc(e.cupom_id || e.id)}">
               <td class="td-corta">${esc(e.estabelecimento || 'Não identificado')}</td>
@@ -259,43 +300,50 @@
         <div class="chart__y"><span>${reaisCurto(topo)}</span><span>${reaisCurto(topo / 2)}</span><span>R$ 0</span></div>
         <div class="chart__plot"><div class="chart__grid"><i></i><i></i><i></i></div><div class="chart__bars">${barras}</div></div>
       </div>${detalheDia}`;
-    return { titulo, resumo, html, baldes: itens };
+    return { titulo, resumo, html };
   }
 
   const vazio = (txt) => `<div class="empty-state" style="padding:24px 8px;"><div class="empty-state-text" style="margin:0;">${esc(txt)}</div></div>`;
 
-  function barrasHorizontais(grupos, total, limite = 6) {
+  function barrasCategorias(grupos, total) {
     if (!grupos.length) return vazio('Sem dados neste período.');
-    return `<div class="hbars">` + grupos.slice(0, limite).map((g, i) => `
-      <div class="hbar">
-        <div class="hbar__top"><span class="hbar__nome" title="${esc(g.nome)}">${esc(g.nome)}</span>
-          <span class="hbar__val">${reais(g.total)} <em>${pct(g.total, total)}%</em></span></div>
+    return `<div class="hbars">` + grupos.map((g, i) => `
+      <button type="button" class="hbar-btn" data-filtrar-cat="${esc(g.nome)}" title="Filtrar compras em ${esc(g.nome)}">
+        <div class="hbar-btn__top">
+          <span class="hbar__nome">${esc(g.nome)}</span>
+          <span class="hbar__val">${reais(g.total)} <em>${pct(g.total, total)}%</em></span>
+        </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill${i === 0 ? '' : ' fill-muted'}" style="width:${pct(g.total, total)}%"></div></div>
-      </div>`).join('') + `</div>`;
+      </button>`).join('') + `</div>`;
   }
 
   function barrasEstabelecimentos(grupos, total) {
     if (!grupos.length) return vazio('Sem dados neste período.');
     return `<div class="hbars">` + grupos.slice(0, 6).map((g, i) => `
-      <button type="button" class="hbar-btn" data-abrir-estab="${esc(g.raw)}" title="Ver compras e itens em ${esc(g.nome)}">
+      <button type="button" class="hbar-btn" data-abrir-estab="${esc(g.raw)}" title="Ver compras, filiais e itens em ${esc(g.nome)}">
         <div class="hbar-btn__top">
           <span class="hbar__nome">${i + 1}. ${esc(g.nome)}</span>
           <span class="hbar__val">${reais(g.total)} <em>${pct(g.total, total)}%</em></span>
           ${ic('chevron-right')}
         </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill${i === 0 ? '' : ' fill-muted'}" style="width:${pct(g.total, total)}%"></div></div>
-        <div class="hbar-btn__sub"><span>${g.qtd} ${g.qtd === 1 ? 'compra' : 'compras'}</span><span>Ticket ${reais(g.total / g.qtd)}</span></div>
+        <div class="hbar-btn__sub"><span>${g.qtd} ${g.qtd === 1 ? 'compra' : 'compras'}</span><span>Ticket médio ${reais(g.total / g.qtd)}</span></div>
       </button>`).join('') + `</div>`;
   }
 
-  function barrasItens(itensInfo) {
+  function barrasInsumos(itensInfo) {
     const lista = itensInfo.lista.slice(0, 8);
-    if (!lista.length) return vazio('Envie cupons para ver o ranking de insumos mais comprados.');
+    if (!lista.length) return vazio('Envie cupons para acompanhar os insumos mais comprados.');
     const maxVal = itensInfo.temEstruturado ? Math.max(...lista.map((i) => i.total), 1) : Math.max(...lista.map((i) => i.compras), 1);
     return `<div class="hbars">` + lista.map((it, i) => {
       const largura = itensInfo.temEstruturado ? pct(it.total, maxVal) : pct(it.compras, maxVal);
       const valTxt = it.total > 0 ? reais(it.total) : `${it.compras}x`;
-      const qtdTxt = it.qtd > 0 && it.unidade ? `${Number(it.qtd).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ${esc(it.unidade)} · ` : '';
+      const qtdTxt = it.qtd > 0 && it.unidade
+        ? `${Number(it.qtd).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ${esc(it.unidade)}`
+        : `${it.compras} ${it.compras === 1 ? 'compra' : 'compras'}`;
+      const mediaTxt = it.precoMedio != null && it.unidade
+        ? `Média ${reais(it.precoMedio)}/${esc(it.unidade)}`
+        : `${it.compras} ${it.compras === 1 ? 'compra' : 'compras'}`;
       return `
       <button type="button" class="hbar-btn" data-buscar-item="${esc(it.nome)}" title="Filtrar compras com ${esc(it.nome)}">
         <div class="hbar-btn__top">
@@ -304,17 +352,53 @@
           ${ic('chevron-right')}
         </div>
         <div class="progress-bar-bg"><div class="progress-bar-fill${i === 0 ? '' : ' fill-muted'}" style="width:${largura}%"></div></div>
-        <div class="hbar-btn__sub"><span>${qtdTxt}${it.compras} ${it.compras === 1 ? 'compra' : 'compras'}</span><span>Clique para filtrar</span></div>
+        <div class="hbar-btn__sub"><span>${qtdTxt}</span><span>${mediaTxt}</span></div>
       </button>`;
     }).join('') + `</div>`;
   }
 
-  function cartao(titulo, corpo, extra = '') {
-    return `<section class="ds-card dash-card ${extra}"><h3 class="ds-card-title dash-titulo">${esc(titulo)}</h3>${corpo}</section>`;
+  function cartao(titulo, corpo, sub = '') {
+    return `<section class="ds-card dash-card">
+      <h3 class="ds-card-title dash-titulo">${esc(titulo)}</h3>
+      ${sub ? `<p class="ds-card-subtitle" style="margin-top:-6px; margin-bottom:12px;">${esc(sub)}</p>` : ''}
+      ${corpo}
+    </section>`;
   }
 
-  // ---- Drawer detalhado por estabelecimento ----
-  function abrirDrawerEstabelecimento(nomeEstab) {
+  // ---- Salvar novo Nome Canônico de estabelecimento (agrupando filiais) ----
+  async function salvarNomeEstabelecimento({ nomeAtual, nomeCanonico, cnpj, agruparFiliais, lancamentoId }) {
+    const res = await fetch('/api/estabelecimentos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nome_atual: nomeAtual,
+        nome_canonico: nomeCanonico,
+        cnpj: cnpj || null,
+        agrupar_filiais: agruparFiliais !== false,
+        lancamento_id: lancamentoId || null
+      })
+    });
+    const corpo = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(corpo.erro || 'Não foi possível atualizar o estabelecimento.');
+    if (typeof window.toast === 'function') {
+      window.toast(`Estabelecimento atualizado para "${nomeCanonico}".`);
+    }
+    dash.ultimoHash = '';
+    if (dash.estabelecimento && norm(dash.estabelecimento) === norm(nomeAtual)) {
+      dash.estabelecimento = nomeCanonico;
+    }
+    await window.carregarDashboard();
+    if (typeof window.carregarNovasEntradas === 'function') window.carregarNovasEntradas();
+    return corpo;
+  }
+
+  // Exposto para o modal de detalhamento do comprovante (app.js)
+  window.renomearEstabelecimento = function ({ nomeAtual, cnpj, lancamentoId, aoConcluir }) {
+    abrirDrawerEstabelecimento(nomeAtual, { abrirEdicao: true, cnpjFoco: cnpj, lancamentoId, aoConcluir });
+  };
+
+  // ---- Drawer detalhado por estabelecimento (com filiais, itens e renomeação) ----
+  function abrirDrawerEstabelecimento(nomeEstab, opts = {}) {
     const f = filtrar(dash.entradas || []);
     const alvo = norm(nomeEstab);
     const compras = f.atual
@@ -325,24 +409,32 @@
     const veu = document.getElementById('drawer-veu');
     if (!drawer || !veu) return;
 
+    const nomeExibido = compras[0]?.estabelecimento || nomeEstab;
+    const cnpjPrincipal = opts.cnpjFoco || compras.find((c) => c.cnpj)?.cnpj || '';
     const total = soma(compras);
     const ticket = compras.length ? total / compras.length : 0;
 
     document.getElementById('drawer-kicker').textContent = 'Detalhamento por estabelecimento';
-    document.getElementById('drawer-titulo').textContent = compras[0]?.estabelecimento || nomeEstab;
+    document.getElementById('drawer-titulo').textContent = nomeExibido;
     const sit = document.getElementById('drawer-situacao');
     sit.className = 'badge badge-neutro';
     sit.textContent = `${compras.length} ${compras.length === 1 ? 'compra' : 'compras'}`;
 
     const comprasHtml = compras.map((c) => {
       const d = dataDe(c);
+      const bruto = c.dados_brutos_json || {};
+      const cnpjFmt = formatarCnpj(c.cnpj || bruto.cnpj);
+      const filial = bruto.estabelecimento_original && bruto.estabelecimento_original !== c.estabelecimento ? bruto.estabelecimento_original : '';
+      const end = bruto.endereco_filial || '';
+      const infoFilial = [filial, cnpjFmt ? `CNPJ ${cnpjFmt}` : '', end].filter(Boolean).join(' · ');
       const itens = itensDe(c);
+
       const blocoItens = itens.length > 0 ? `
         <div class="ds-table-wrapper"><table class="ds-table ds-table--compact">
           <thead><tr><th>Item</th><th>Qtd</th><th>Total</th></tr></thead>
           <tbody>${itens.map((it) => `
             <tr>
-              <td class="td-corta" title="${esc(it.nome)}">${esc(it.nome)}</td>
+              <td class="td-corta" title="${esc(it.nome_canonico || it.nome)}">${esc(it.nome_canonico || it.nome)}</td>
               <td>${Number(it.quantidade || 1).toLocaleString('pt-BR')} ${esc(it.unidade || 'un')}</td>
               <td class="td-valor">${reais(it.valor_total)}</td>
             </tr>`).join('')}
@@ -353,8 +445,8 @@
         <article class="dr-compra">
           <div class="dr-compra__head">
             <div>
-              <div class="dr-compra__data">${d ? dma(d) : 'Sem data'}</div>
-              <div class="dr-compra__meta">${esc(cap(c.categoria || 'Outros'))} · ${esc(cap(c.forma_pagamento || 'Outros'))}</div>
+              <div class="dr-compra__data">${d ? dma(d) : 'Sem data'} · ${esc(c.categoria || 'Outros')}</div>
+              ${infoFilial ? `<div class="dr-compra__meta">${esc(infoFilial)}</div>` : ''}
             </div>
             <div class="dr-compra__val">${reais(c.valor_total)}</div>
           </div>
@@ -372,6 +464,17 @@
         <div class="dr-resumo-box"><small>Compras</small><strong>${compras.length}</strong></div>
         <div class="dr-resumo-box"><small>Ticket médio</small><strong>${reais(ticket)}</strong></div>
       </div>
+
+      <form id="dr-form-estab" class="dr-edit-box"${opts.abrirEdicao ? '' : ' hidden'}>
+        <label class="detalhe-rotulo" for="dr-input-estab">Nome canônico do estabelecimento</label>
+        <input type="text" id="dr-input-estab" class="ds-input" value="${esc(nomeExibido)}" maxlength="120" required>
+        ${cnpjPrincipal ? `<label class="dr-check"><input type="checkbox" id="dr-check-filiais" checked> Agrupar todas as filiais desta rede (mesma raiz de CNPJ) e aplicar nas próximas compras</label>` : `<p class="ds-card-subtitle" style="margin:6px 0 0;">A regra será salva e aplicada nas compras futuras deste estabelecimento.</p>`}
+        <div class="dr-edit-acoes">
+          <button type="submit" class="btn btn-primary btn-sm" id="dr-btn-salvar-estab">Salvar nome</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="dr-btn-cancelar-estab">Cancelar</button>
+        </div>
+      </form>
+
       ${comprasHtml || vazio('Nenhuma compra encontrada neste período.')}`;
 
     corpo.querySelectorAll('[data-drawer-cupom]').forEach((btn) => {
@@ -382,22 +485,58 @@
       });
     });
 
+    const formEdit = document.getElementById('dr-form-estab');
+    const fechar = () => { drawer.hidden = true; veu.hidden = true; };
+
+    document.getElementById('dr-btn-cancelar-estab')?.addEventListener('click', () => {
+      formEdit.hidden = true;
+    });
+
+    formEdit?.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const novoNome = document.getElementById('dr-input-estab').value.trim();
+      if (!novoNome) return;
+      const btnSalvar = document.getElementById('dr-btn-salvar-estab');
+      btnSalvar.disabled = true;
+      btnSalvar.textContent = 'Salvando…';
+      try {
+        await salvarNomeEstabelecimento({
+          nomeAtual: nomeExibido,
+          nomeCanonico: novoNome,
+          cnpj: cnpjPrincipal,
+          agruparFiliais: document.getElementById('dr-check-filiais')?.checked !== false,
+          lancamentoId: opts.lancamentoId || null
+        });
+        if (typeof opts.aoConcluir === 'function') opts.aoConcluir(novoNome);
+        fechar();
+      } catch (err) {
+        if (typeof window.toast === 'function') window.toast(err.message, 'erro');
+        btnSalvar.disabled = false;
+        btnSalvar.textContent = 'Salvar nome';
+      }
+    });
+
     const rodape = document.getElementById('drawer-rodape');
     rodape.innerHTML = `
-      <button type="button" class="btn btn-primary btn-sm" id="dr-btn-filtrar-estab">${ic('store')} Filtrar no dashboard</button>
-      <button type="button" class="btn btn-secondary btn-sm" id="dr-btn-fechar-estab">Fechar</button>`;
+      <button type="button" class="btn btn-secondary btn-sm" id="dr-btn-abrir-edicao">Renomear</button>
+      <button type="button" class="btn btn-primary btn-sm" id="dr-btn-filtrar-estab">${ic('store')} Filtrar</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="dr-btn-fechar-estab">Fechar</button>`;
 
-    const fechar = () => { drawer.hidden = true; veu.hidden = true; };
+    document.getElementById('dr-btn-abrir-edicao').addEventListener('click', () => {
+      formEdit.hidden = !formEdit.hidden;
+      if (!formEdit.hidden) document.getElementById('dr-input-estab')?.focus();
+    });
     document.getElementById('dr-btn-fechar-estab').addEventListener('click', fechar);
     document.getElementById('dr-btn-filtrar-estab').addEventListener('click', () => {
-      dash.estabelecimento = compras[0]?.estabelecimento || nomeEstab;
+      dash.estabelecimento = nomeExibido;
       fechar();
       render();
     });
 
     drawer.hidden = false;
     veu.hidden = false;
-    document.getElementById('drawer-fechar')?.focus();
+    if (opts.abrirEdicao) document.getElementById('dr-input-estab')?.focus();
+    else document.getElementById('drawer-fechar')?.focus();
   }
 
   // ---- Exportar CSV (100% local no navegador, pronto para Excel PT-BR) ----
@@ -409,36 +548,35 @@
     const cel = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const numBr = (v) => (v != null && v !== '' && !isNaN(Number(v))) ? Number(v).toFixed(2).replace('.', ',') : '';
     const linhas = [
-      ['Data', 'Estabelecimento', 'Categoria', 'Forma de Pagamento', 'Item', 'Quantidade', 'Unidade', 'Valor Unitario (R$)', 'Valor do Item (R$)', 'Total do Cupom (R$)', 'Status'].map(cel).join(';')
+      ['Data', 'Estabelecimento', 'CNPJ', 'Categoria', 'Item', 'Quantidade', 'Unidade', 'Valor Unitario (R$)', 'Valor do Item (R$)', 'Total do Cupom (R$)'].map(cel).join(';')
     ];
 
     lista.forEach((e) => {
       const d = dataDe(e);
       const dataStr = d ? dma(d) : '';
       const estab = e.estabelecimento || 'Não identificado';
-      const cat = cap(e.categoria || 'Outros');
-      const pag = cap(e.forma_pagamento || 'Outros');
+      const cnpjFmt = formatarCnpj(e.cnpj || e.dados_brutos_json?.cnpj);
+      const cat = e.categoria || 'Outros';
       const totCupom = numBr(e.valor_total);
-      const st = cap(e.status_revisao || 'novo');
       const itens = itensDe(e);
 
       if (itens.length > 0) {
         itens.forEach((it) => {
           linhas.push([
-            dataStr, estab, cat, pag,
-            it.nome,
+            dataStr, estab, cnpjFmt, cat,
+            it.nome_canonico || it.nome,
             String(it.quantidade ?? 1).replace('.', ','),
             it.unidade || 'un',
             numBr(it.valor_unitario),
             numBr(it.valor_total),
-            totCupom, st
+            totCupom
           ].map(cel).join(';'));
         });
       } else {
         linhas.push([
-          dataStr, estab, cat, pag,
+          dataStr, estab, cnpjFmt, cat,
           e.resumo_itens || 'Sem detalhamento de itens',
-          '', '', '', totCupom, totCupom, st
+          '', '', '', totCupom, totCupom
         ].map(cel).join(';'));
       }
     });
@@ -470,10 +608,6 @@
 
     const periodoBtns = PERIODOS.map((p) => `<button type="button" class="seg__opt" data-periodo="${p.id}" aria-pressed="${dash.periodo === p.id}">${p.rotulo}</button>`).join('');
 
-    // Opções únicas de estabelecimentos e categorias (do histórico todo)
-    const todosEstabs = [...new Map(todas.map((e) => [norm(e.estabelecimento || 'Não identificado'), e.estabelecimento || 'Não identificado'])).values()].sort((a, b) => a.localeCompare(b));
-    const todasCats = [...new Map(todas.map((e) => [norm(e.categoria || 'Outros'), cap(e.categoria || 'Outros')])).values()].sort((a, b) => a.localeCompare(b));
-
     const temFiltroAtivo = Boolean(dash.estabelecimento || dash.categoria || dash.busca.trim() || dash.periodo === 'custom');
 
     const kpi = (icone, rotulo, valor, rodape) => `
@@ -484,17 +618,15 @@
       </div>`;
 
     const g = graficoTempo(atual, f.ini, f.fim);
-    const porCat = agrupar(atual, (e) => e.categoria || 'Outros');
-    const porPag = agrupar(atual, (e) => e.forma_pagamento || 'Outros');
+    const porCat = agruparCategorias(atual);
     const porEst = agrupar(atual, (e) => e.estabelecimento || 'Não identificado');
-    const itensInfo = agruparItens(atual);
+    const itensInfo = agruparInsumos(atual);
 
-    const tituloCat = porCat.length ? `${porCat[0].nome} concentra ${pct(porCat[0].total, total)}% dos gastos` : 'Gastos por categoria';
-    const tituloPag = porPag.length ? `${porPag[0].nome} é a forma mais usada (${pct(porPag[0].total, total)}%)` : 'Forma de pagamento';
-    const tituloEst = porEst.length ? `Estabelecimentos: ${porEst[0].nome} lidera` : 'Estabelecimentos';
+    const tituloCat = porCat.length ? `${porCat[0].nome} lidera (${pct(porCat[0].total, total)}%)` : 'Distribuição por categoria';
+    const tituloEst = porEst.length ? `Principais estabelecimentos: ${porEst[0].nome} lidera` : 'Principais estabelecimentos';
     const tituloItens = itensInfo.lista.length
-      ? (itensInfo.temEstruturado ? `Insumo líder: ${itensInfo.lista[0].nome} (${reais(itensInfo.lista[0].total)})` : `Item mais recorrente: ${itensInfo.lista[0].nome}`)
-      : 'Itens mais comprados';
+      ? (itensInfo.temEstruturado ? `Ranking de insumos: ${itensInfo.lista[0].nome} lidera` : `Ranking de insumos: ${itensInfo.lista[0].nome}`)
+      : 'Ranking de insumos';
 
     const ordenados = [...atual].sort((a, b) => (b.data_emissao || b.criado_em || '').localeCompare(a.data_emissao || a.criado_em || ''));
     const limiteTabela = dash.mostrarTodasCompras ? ordenados.length : 15;
@@ -502,19 +634,21 @@
 
     const ultHtml = visiveis.length ? `
       <div class="ds-table-wrapper"><table class="ds-table ds-table--click">
-        <thead><tr><th>Data</th><th>Estabelecimento</th><th>Itens comprados</th><th>Categoria</th><th>Valor</th><th>Status</th><th><span class="sr-only">Abrir</span></th></tr></thead>
+        <thead><tr><th>Data</th><th>Estabelecimento</th><th>Itens</th><th>Categoria</th><th>Valor</th><th><span class="sr-only">Abrir</span></th></tr></thead>
         <tbody>
         ${visiveis.map((e) => {
-          const d = dataDe(e); const st = e.status_revisao || 'novo';
-          const cls = st === 'confirmado' ? 'badge-confirmado' : (st === 'revisar' ? 'badge-revisar' : 'badge-novo');
+          const d = dataDe(e);
+          const st = e.status_revisao || 'novo';
+          const badgePend = st === 'revisar'
+            ? `<span class="badge badge-revisar" style="margin-left:6px;">Revisar</span>`
+            : (st === 'novo' ? `<span class="badge badge-novo" style="margin-left:6px;">Conferir</span>` : '');
           const resumo = resumoItensTexto(e);
           return `<tr class="linha-envio" tabindex="0" role="button" data-abrir-cupom="${esc(e.cupom_id || e.id)}">
             <td>${d ? dma(d) : '—'}</td>
-            <td class="td-corta" title="${esc(e.estabelecimento || 'Não identificado')}">${esc(e.estabelecimento || 'Não identificado')}</td>
+            <td class="td-corta" title="${esc(e.estabelecimento || 'Não identificado')}">${esc(e.estabelecimento || 'Não identificado')}${badgePend}</td>
             <td class="td-corta" title="${esc(resumo)}">${esc(resumo)}</td>
-            <td><span class="badge badge-neutro">${esc(cap(e.categoria || 'Outros'))}</span></td>
+            <td><span class="badge badge-neutro">${esc(e.categoria || 'Outros')}</span></td>
             <td class="td-valor">${reais(e.valor_total)}</td>
-            <td><span class="badge ${cls}">${cap(st)}</span></td>
             <td>${ic('chevron-right')}</td>
           </tr>`;
         }).join('')}
@@ -529,16 +663,22 @@
     raiz.innerHTML = `
       <div class="dash-head">
         <div>
-          <div class="ds-card-subtitle" style="margin:0;">Visão geral</div>
-          <h2 class="dash-h1">Dashboard de Compras</h2>
-          <p class="ds-card-subtitle">Detalhamento por estabelecimento, data e itens comprados${f.ini && f.fim && !semDados ? ` · ${dma(f.ini)} a ${dma(f.fim)}` : ''}</p>
+          <div class="ds-card-subtitle" style="margin:0;">Gestão de compras</div>
+          <h2 class="dash-h1">Dashboard do Buffet</h2>
+          <p class="ds-card-subtitle">Insumos, categorias e estabelecimentos${f.ini && f.fim && !semDados ? ` · ${dma(f.ini)} a ${dma(f.fim)}` : ''}${dash.estabelecimento ? ` · ${esc(dash.estabelecimento)}` : ''}</p>
         </div>
         <div class="dash-filtros">
           <div class="seg" role="group" aria-label="Período">${periodoBtns}</div>
         </div>
       </div>
 
-      ${semDados ? `<div class="ds-card">${vazio('Ainda não há comprovantes lidos. Envie o primeiro na aba Novo Envio.')}</div>` : `
+      ${semDados ? `
+      <div class="kpi-grid kpi-grid--3">
+        ${kpi('wallet', 'Total gasto', 'R$ 0,00', '<span class="kpi__cmp">Sem lançamentos</span>')}
+        ${kpi('receipt-text', 'Comprovantes e itens', '0', '<span class="kpi__cmp">0 itens lidos</span>')}
+        ${kpi('calculator', 'Ticket médio', 'R$ 0,00', '<span class="kpi__cmp">Sem lançamentos</span>')}
+      </div>
+      <div class="ds-card">${vazio('Nenhum comprovante registrado ainda. Envie o primeiro cupom na aba Novo Envio.')}</div>` : `
       <div class="dash-bar-filtros" role="search" aria-label="Filtros do dashboard">
         ${dash.periodo === 'custom' ? `
         <div class="dash-datas">
@@ -547,14 +687,10 @@
           <span>até</span>
           <input type="date" id="dash-data-fim" class="ds-input" value="${esc(fimPadrao)}" aria-label="Data final">
         </div>` : ''}
-        <input type="search" id="dash-busca" class="ds-input dash-busca" value="${esc(dash.busca)}" placeholder="Buscar item (ex: mussarela, frango) ou mercado…" aria-label="Buscar por item ou estabelecimento">
-        <select id="dash-filtro-estab" class="ds-select" aria-label="Filtrar por estabelecimento">
-          <option value="">Todos os estabelecimentos</option>
-          ${todosEstabs.map((n) => `<option value="${esc(n)}"${norm(dash.estabelecimento) === norm(n) ? ' selected' : ''}>${esc(n)}</option>`).join('')}
-        </select>
+        <input type="search" id="dash-busca" class="ds-input dash-busca" value="${esc(dash.busca)}" placeholder="Buscar item (ex: mussarela, frango) ou estabelecimento…" aria-label="Buscar por item ou estabelecimento">
         <select id="dash-filtro-cat" class="ds-select" aria-label="Filtrar por categoria">
           <option value="">Todas as categorias</option>
-          ${todasCats.map((n) => `<option value="${esc(n)}"${norm(dash.categoria) === norm(n) ? ' selected' : ''}>${esc(n)}</option>`).join('')}
+          ${CATEGORIAS_BUFFET.map((n) => `<option value="${esc(n)}"${norm(dash.categoria) === norm(n) ? ' selected' : ''}>${esc(n)}</option>`).join('')}
         </select>
         <div class="dash-bar-acoes">
           ${temFiltroAtivo ? `<button type="button" class="btn btn-ghost btn-sm" id="dash-limpar-filtros">Limpar filtros</button>` : ''}
@@ -562,11 +698,16 @@
         </div>
       </div>
 
-      <div class="kpi-grid">
-        ${kpi('wallet', 'Total registrado', reais(total), delta(total, totalAnt, f.comparavel))}
-        ${kpi('receipt-text', 'Comprovantes', String(qtd), totalItensLidos > 0 ? `<span class="kpi__cmp">${totalItensLidos} itens discriminados</span>` : delta(qtd, qtdAnt, f.comparavel))}
+      ${pendentes > 0 ? `
+      <div class="dash-aviso-pend">
+        <span>${ic('circle-alert')} ${pendentes} ${pendentes === 1 ? 'comprovante aguardando conferência' : 'comprovantes aguardando conferência'}</span>
+        <button type="button" class="link-acao" id="dash-ir-revisar">Revisar agora ${ic('arrow-right')}</button>
+      </div>` : ''}
+
+      <div class="kpi-grid kpi-grid--3">
+        ${kpi('wallet', 'Total gasto', reais(total), delta(total, totalAnt, f.comparavel))}
+        ${kpi('receipt-text', 'Comprovantes e itens', String(qtd), totalItensLidos > 0 ? `<span class="kpi__cmp">${totalItensLidos} ${totalItensLidos === 1 ? 'item discriminado' : 'itens discriminados'}</span>` : delta(qtd, qtdAnt, f.comparavel))}
         ${kpi('calculator', 'Ticket médio', reais(ticket), delta(ticket, ticketAnt, f.comparavel))}
-        ${kpi('clipboard-list', 'Pendentes de revisão', String(pendentes), pendentes ? `<button type="button" class="link-acao" id="dash-ir-revisar">Revisar agora ${ic('arrow-right')}</button>` : '<span class="kpi__cmp">Tudo conferido</span>')}
       </div>
 
       <div class="dash-linha dash-linha--2-1">
@@ -577,20 +718,19 @@
           </div>
           ${g.html}
         </section>
-        ${cartao(tituloEst, `<p class="ds-card-subtitle" style="margin-top:-6px; margin-bottom:12px;">Clique em um estabelecimento para ver as compras e itens</p>` + barrasEstabelecimentos(porEst, total))}
+        ${cartao(tituloCat, barrasCategorias(porCat, total), 'Clique em uma categoria para filtrar')}
       </div>
 
-      <div class="dash-linha dash-linha--3">
-        ${cartao(tituloItens, `<p class="ds-card-subtitle" style="margin-top:-6px; margin-bottom:12px;">Ranking de insumos do período</p>` + barrasItens(itensInfo))}
-        ${cartao(tituloCat, barrasHorizontais(porCat, total))}
-        ${cartao(tituloPag, barrasHorizontais(porPag, total))}
+      <div class="dash-linha dash-linha--2">
+        ${cartao(tituloItens, barrasInsumos(itensInfo), 'Total gasto, quantidade e preço médio por unidade')}
+        ${cartao(tituloEst, barrasEstabelecimentos(porEst, total), 'Clique para ver compras, filiais ou renomear')}
       </div>
 
       <section class="ds-card dash-card">
         <div class="ds-card-header" style="margin-bottom:12px;">
           <div>
-            <h3 class="ds-card-title dash-titulo">Compras detalhadas (${ordenados.length})</h3>
-            <p class="ds-card-subtitle" style="margin:2px 0 0;">Clique em qualquer compra para abrir a lista completa de itens e a foto do cupom</p>
+            <h3 class="ds-card-title dash-titulo">Compras (${ordenados.length})</h3>
+            <p class="ds-card-subtitle" style="margin:2px 0 0;">Clique em uma linha para abrir os itens, CNPJ da filial e foto do cupom</p>
           </div>
           ${ordenados.length > 15 ? `<button type="button" class="btn btn-secondary btn-sm" id="dash-toggle-todas">${dash.mostrarTodasCompras ? 'Mostrar menos' : `Ver todas (${ordenados.length})`}</button>` : ''}
         </div>
@@ -655,6 +795,14 @@
         abrirDrawerEstabelecimento(btnEst.dataset.abrirEstab);
         return;
       }
+      const btnCat = ev.target.closest('[data-filtrar-cat]');
+      if (btnCat) {
+        const c = btnCat.dataset.filtrarCat;
+        dash.categoria = norm(dash.categoria) === norm(c) ? '' : c;
+        dash.diaSelecionado = null;
+        render();
+        return;
+      }
       const btnItem = ev.target.closest('[data-buscar-item]');
       if (btnItem) {
         dash.busca = btnItem.dataset.buscarItem;
@@ -676,7 +824,6 @@
     });
 
     raiz.addEventListener('change', (ev) => {
-      if (ev.target.id === 'dash-filtro-estab') { dash.estabelecimento = ev.target.value; dash.diaSelecionado = null; render(); }
       if (ev.target.id === 'dash-filtro-cat') { dash.categoria = ev.target.value; dash.diaSelecionado = null; render(); }
       if (ev.target.id === 'dash-data-ini') { dash.dataIni = ev.target.value; dash.diaSelecionado = null; render(); }
       if (ev.target.id === 'dash-data-fim') { dash.dataFim = ev.target.value; dash.diaSelecionado = null; render(); }

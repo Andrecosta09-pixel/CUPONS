@@ -328,7 +328,11 @@
         <div style="display: flex; flex-direction: column; gap: 12px; font-size: 0.85rem;">
           <div>
             <div class="detalhe-rotulo">Estabelecimento</div>
-            <div id="modal-detalhe-estab" style="font-weight: 600; font-size: 15px;">-</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <div id="modal-detalhe-estab" style="font-weight: 600; font-size: 15px;">-</div>
+              <button type="button" id="btn-editar-estab-modal" class="btn btn-ghost btn-sm" title="Renomear ou agrupar filiais deste estabelecimento">Renomear</button>
+            </div>
+            <div id="modal-detalhe-filial" class="ds-card-subtitle" style="margin-top:2px;">-</div>
             <div id="modal-detalhe-cnpj" class="ds-card-subtitle">-</div>
           </div>
 
@@ -343,19 +347,13 @@
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div>
-              <div class="detalhe-rotulo">Categoria</div>
-              <div id="modal-detalhe-categoria" style="font-weight: 600; color: var(--c-strong);">-</div>
-            </div>
-            <div>
-              <div class="detalhe-rotulo">Pagamento</div>
-              <div id="modal-detalhe-pagamento" style="font-weight: 600;">-</div>
-            </div>
+          <div>
+            <div class="detalhe-rotulo">Categoria</div>
+            <div id="modal-detalhe-categoria" style="font-weight: 600; color: var(--c-strong);">-</div>
           </div>
 
           <div>
-            <div class="detalhe-rotulo">Resumo dos Itens Extraídos</div>
+            <div class="detalhe-rotulo">Itens Extraídos</div>
             <div id="modal-detalhe-itens" class="detalhe-itens">-</div>
           </div>
 

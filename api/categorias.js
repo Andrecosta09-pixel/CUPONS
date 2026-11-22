@@ -1,20 +1,12 @@
 // =============================================================================
-// API/CATEGORIAS.JS — Lista as categorias disponíveis (exige login).
+// API/CATEGORIAS.JS — Retorna as 7 categorias oficiais focadas em Buffet.
 // =============================================================================
 
 import { createClient } from '@supabase/supabase-js';
 import { autenticar } from './_auth.js';
+import { CATEGORIAS_BUFFET } from './_normalizador.js';
 
-const CATEGORIAS_PADRAO = [
-  { nome: 'Mercado' },
-  { nome: 'Obra / construção' },
-  { nome: 'Combustível' },
-  { nome: 'Alimentação' },
-  { nome: 'Farmácia / saúde' },
-  { nome: 'Casa / utilidades' },
-  { nome: 'Serviços' },
-  { nome: 'Outros' }
-];
+const LISTA_OFICIAL = CATEGORIAS_BUFFET.map((nome) => ({ nome }));
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -31,14 +23,5 @@ export default async function handler(req, res) {
   const cliente = await autenticar(req, res, supabase);
   if (!cliente) return;
 
-  const { data, error } = await supabase
-    .from('categorias')
-    .select('*')
-    .order('nome', { ascending: true });
-
-  if (error || !data) {
-    return res.status(200).json(CATEGORIAS_PADRAO);
-  }
-
-  return res.status(200).json(data);
+  return res.status(200).json(LISTA_OFICIAL);
 }

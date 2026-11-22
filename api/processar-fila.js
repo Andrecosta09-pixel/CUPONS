@@ -6,6 +6,13 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { autenticar } from './_auth.js';
+import {
+  sanitizarCnpj,
+  raizCnpj,
+  resolverEstabelecimento,
+  normalizarItens,
+  normalizarCategoriaBuffet
+} from './_normalizador.js';
 
 export const config = { maxDuration: 60 };
 
@@ -162,21 +169,45 @@ async function processarCupom(supabase, cupom) {
       throw new Error('Gemini não conseguiu ler valor nem estabelecimento.');
     }
 
-    // --- e) Inserir em cupons_lancamentos (um registro por cupom lido) ---
+    // --- d.1) Buscar regras de normalização de estabelecimentos do cliente (se tabela existir) ---
+    let regrasEstab = [];
+    try {
+      const { data: rData } = await supabase
+        .from('estabelecimentos_regras')
+        .select('cnpj, cnpj_raiz, padrao_nome, nome_canonico')
+        .eq('cliente', cupom.cliente);
+      if (Array.isArray(rData)) regrasEstab = rData;
+    } catch (_) {}
+
+    // --- e) Inserir em cupons_lancamentos (um registro por cupom lido, já normalizado) ---
     const { error: erroInsert } = await supabase
       .from('cupons_lancamentos')
-      .insert(dadosExtraidos.map((d) => ({
-        cupom_id: cupom.id,
-        cliente: cupom.cliente,
-        data_emissao: d.data_emissao || null,
-        estabelecimento: d.estabelecimento || null,
-        cnpj: d.cnpj || null,
-        valor_total: d.valor_total || null,
-        forma_pagamento: d.forma_pagamento || null,
-        categoria: d.categoria || null,
-        resumo_itens: d.resumo_itens || null,
-        dados_brutos_json: d.dados_brutos
-      })));
+      .insert(dadosExtraidos.map((d) => {
+        const estabCanonico = resolverEstabelecimento(d.estabelecimento_original, d.cnpj, regrasEstab);
+        const categoriaFinal = normalizarCategoriaBuffet(d.categoria, d.itens, d.estabelecimento_original);
+        const dadosBrutos = {
+          ...(d.dados_brutos || {}),
+          estabelecimento_original: d.estabelecimento_original || null,
+          estabelecimento_canonico: estabCanonico,
+          cnpj: d.cnpj || null,
+          cnpj_raiz: raizCnpj(d.cnpj),
+          endereco_filial: d.endereco_filial || null,
+          itens: d.itens
+        };
+        return {
+          cupom_id: cupom.id,
+          cliente: cupom.cliente,
+          data_emissao: d.data_emissao || null,
+          estabelecimento: estabCanonico,
+          cnpj: d.cnpj || null,
+          valor_total: d.valor_total || null,
+          forma_pagamento: d.forma_pagamento || null,
+          categoria: categoriaFinal,
+          resumo_itens: d.resumo_itens || null,
+          itens_json: d.itens,
+          dados_brutos_json: dadosBrutos
+        };
+      }));
 
     if (erroInsert) {
       throw new Error('Falha ao inserir lançamento: ' + erroInsert.message);
@@ -278,23 +309,23 @@ Responda SOMENTE com o JSON, sem markdown, sem explicações, sem backticks.
 Campos obrigatórios do JSON:
 {
   "data_emissao": "YYYY-MM-DD (data de emissão do cupom)",
-  "estabelecimento": "nome do estabelecimento que emitiu o cupom",
+  "estabelecimento": "nome fantasia ou razão social do estabelecimento no cupom",
   "cnpj": "CNPJ do estabelecimento (somente números, 14 dígitos)",
+  "endereco_filial": "endereço da filial (rua, número, bairro/cidade) se legível no cupom",
   "valor_total": 0.00,
-  "forma_pagamento": "dinheiro, cartão de crédito, cartão de débito, pix, etc.",
-  "categoria": "classificação do tipo de compra: supermercado, frios, carnes, hortifruti, bebidas, embalagens, ingredientes, padaria, material de limpeza, descartáveis, outros",
+  "categoria": "escolha EXATAMENTE UMA destas 7 categorias de buffet: Proteínas & Frios | Mercearia & Secos | Hortifruti & Padaria | Embalagens & Descartáveis | Limpeza & Utensílios | Combustível & Logística | Outros",
   "resumo_itens": "resumo dos principais itens comprados, separados por vírgula (máximo 200 caracteres)",
   "itens": [
     {
-      "nome": "nome limpo e legível do produto (sem códigos internos)",
+      "nome": "nome limpo e legível do produto em português (sem códigos internos nem abreviações truncadas)",
       "quantidade": 1,
-      "unidade": "un, kg, g, L, ml, pct, cx, fd, etc.",
+      "unidade": "padronize sempre como: kg, g, L, ml, un, pct, cx, fd, bdj, dz ou rl",
       "valor_unitario": 0.00,
       "valor_total": 0.00
     }
   ]
 }
-Extraia TODOS os itens visíveis do cupom no array "itens". Se algum item não tiver quantidade/unidade legível, use quantidade 1 e unidade "un".`;
+Extraia TODOS os itens visíveis do cupom no array "itens". Se algum item não tiver quantidade/unidade legível, use quantidade 1 e unidade "un". Use a categoria "Outros" apenas se não se encaixar em nenhuma das outras 6.`;
 
   // Tentativas com backoff para erros transitórios (503, 429)
   const maxTentativas = 1; // uma tentativa por modelo; o fallback é trocar de modelo
@@ -414,15 +445,11 @@ function parsearRespostaGemini(texto) {
     if (Array.isArray(bruto)) {
       if (bruto.length === 0) throw new Error('lista vazia');
       const lista = bruto.map(normalizarCupom);
-      lista.forEach((c, i) => {
-        c.dados_brutos = { ...(bruto[i] || {}), itens: c._itens };
-        delete c._itens;
-      });
+      lista.forEach((c, i) => { c.dados_brutos = bruto[i] || {}; });
       return lista;
     }
     const unico = normalizarCupom(bruto);
-    unico.dados_brutos = { ...(bruto || {}), itens: unico._itens };
-    delete unico._itens;
+    unico.dados_brutos = bruto || {};
     return [unico];
 
   } catch (erroJson) {
@@ -430,51 +457,25 @@ function parsearRespostaGemini(texto) {
   }
 }
 
-function normalizarItens(lista) {
-  if (!Array.isArray(lista)) return [];
-  return lista
-    .map((it) => {
-      if (!it || typeof it !== 'object') return null;
-      const nome = typeof it.nome === 'string' ? it.nome.trim().slice(0, 140) : '';
-      if (!nome) return null;
-      const num = (v) => {
-        if (typeof v === 'number' && !isNaN(v)) return v;
-        if (typeof v === 'string') {
-          const p = parseFloat(v.replace(/\./g, '').replace(',', '.'));
-          return isNaN(p) ? null : p;
-        }
-        return null;
-      };
-      const qtd = num(it.quantidade);
-      const unit = num(it.valor_unitario);
-      const tot = num(it.valor_total);
-      const unidade = typeof it.unidade === 'string' && it.unidade.trim() ? it.unidade.trim().slice(0, 16) : 'un';
-      return {
-        nome,
-        quantidade: qtd !== null && qtd > 0 ? qtd : 1,
-        unidade,
-        valor_unitario: unit !== null && unit >= 0 ? unit : (tot !== null && qtd > 0 ? Number((tot / qtd).toFixed(2)) : null),
-        valor_total: tot !== null && tot >= 0 ? tot : (unit !== null && qtd > 0 ? Number((unit * qtd).toFixed(2)) : 0)
-      };
-    })
-    .filter(Boolean);
-}
-
 function normalizarCupom(dados) {
   const itens = normalizarItens(dados && dados.itens);
   let resumo = typeof dados.resumo_itens === 'string' ? dados.resumo_itens.trim().substring(0, 500) : null;
   if (!resumo && itens.length > 0) {
-    resumo = itens.map((i) => i.nome).join(', ').substring(0, 500);
+    resumo = itens.map((i) => i.nome_canonico).join(', ').substring(0, 500);
   }
+  const estabOriginal = typeof dados.estabelecimento === 'string' ? dados.estabelecimento.trim() : null;
+  const cnpj = sanitizarCnpj(dados.cnpj);
   return {
     data_emissao: validarData(dados.data_emissao),
-    estabelecimento: typeof dados.estabelecimento === 'string' ? dados.estabelecimento.trim() : null,
-    cnpj: sanitizarCnpj(dados.cnpj),
+    estabelecimento: estabOriginal,
+    estabelecimento_original: estabOriginal,
+    endereco_filial: typeof dados.endereco_filial === 'string' ? dados.endereco_filial.trim().slice(0, 240) : null,
+    cnpj,
     valor_total: typeof dados.valor_total === 'number' ? dados.valor_total : parseFloat(dados.valor_total) || null,
     forma_pagamento: typeof dados.forma_pagamento === 'string' ? dados.forma_pagamento.trim().toLowerCase() : null,
-    categoria: typeof dados.categoria === 'string' ? dados.categoria.trim().toLowerCase() : null,
+    categoria: typeof dados.categoria === 'string' ? dados.categoria.trim() : null,
     resumo_itens: resumo,
-    _itens: itens
+    itens
   };
 }
 
@@ -501,19 +502,6 @@ function validarData(valor) {
 
   // Retornar no formato YYYY-MM-DD
   return data.toISOString().split('T')[0];
-}
-
-/**
- * Sanitiza CNPJ: mantém apenas dígitos e valida comprimento.
- *
- * @param {string|null} valor - CNPJ retornado pela IA.
- * @returns {string|null} CNPJ com 14 dígitos ou null.
- */
-function sanitizarCnpj(valor) {
-  if (!valor) return null;
-
-  const apenasDigitos = String(valor).replace(/\D/g, '');
-  return apenasDigitos.length === 14 ? apenasDigitos : (apenasDigitos.length > 0 ? apenasDigitos : null);
 }
 
 /**

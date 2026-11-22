@@ -635,14 +635,48 @@ window.verComprovanteOriginal = async function(cupomId) {
 
     // 3. Preencher os detalhes no modal
     if (entrada) {
+      const bruto = entrada.dados_brutos_json || {};
+      const cnpjLimpo = String(entrada.cnpj || bruto.cnpj || '').replace(/\D/g, '');
+      const cnpjFmt = cnpjLimpo.length === 14
+        ? cnpjLimpo.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+        : (entrada.cnpj || '');
+      const orig = bruto.estabelecimento_original && bruto.estabelecimento_original !== entrada.estabelecimento
+        ? `Filial no cupom: ${bruto.estabelecimento_original}`
+        : '';
+      const end = bruto.endereco_filial ? bruto.endereco_filial : '';
+      const infoFilial = [orig, end].filter(Boolean).join(' · ');
+
       document.getElementById('modal-detalhe-estab').textContent = entrada.estabelecimento || 'Não identificado';
-      document.getElementById('modal-detalhe-cnpj').textContent = entrada.cnpj ? `CNPJ: ${entrada.cnpj}` : 'CNPJ não informado';
+      const elFilial = document.getElementById('modal-detalhe-filial');
+      if (elFilial) {
+        elFilial.textContent = infoFilial;
+        elFilial.style.display = infoFilial ? '' : 'none';
+      }
+      document.getElementById('modal-detalhe-cnpj').textContent = cnpjFmt ? `CNPJ: ${cnpjFmt}` : 'CNPJ não informado';
       document.getElementById('modal-detalhe-data').textContent = entrada.data_emissao ? entrada.data_emissao.split('-').reverse().join('/') : 'n/d';
       document.getElementById('modal-detalhe-valor').textContent = (parseFloat(entrada.valor_total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       document.getElementById('modal-detalhe-categoria').textContent = entrada.categoria || 'Outros';
-      document.getElementById('modal-detalhe-pagamento').textContent = entrada.forma_pagamento || 'Outros';
+
+      const btnEd = document.getElementById('btn-editar-estab-modal');
+      if (btnEd) {
+        btnEd.onclick = () => {
+          if (typeof window.renomearEstabelecimento === 'function') {
+            window.renomearEstabelecimento({
+              nomeAtual: entrada.estabelecimento || '',
+              cnpj: cnpjLimpo,
+              lancamentoId: entrada.id,
+              aoConcluir: (novoNome) => {
+                document.getElementById('modal-detalhe-estab').textContent = novoNome;
+              }
+            });
+          }
+        };
+      }
+
       const elItens = document.getElementById('modal-detalhe-itens');
-      const listaItens = entrada.dados_brutos_json && Array.isArray(entrada.dados_brutos_json.itens) ? entrada.dados_brutos_json.itens : [];
+      const listaItens = (Array.isArray(entrada.itens_json) && entrada.itens_json.length > 0)
+        ? entrada.itens_json
+        : (bruto && Array.isArray(bruto.itens) ? bruto.itens : []);
       if (listaItens.length > 0) {
         elItens.innerHTML = `<div class="ds-table-wrapper"><table class="ds-table ds-table--compact"><thead><tr><th>Item</th><th>Qtd</th><th>Unit.</th><th>Total</th></tr></thead><tbody>` +
           listaItens.map((it) => {
@@ -650,7 +684,8 @@ window.verComprovanteOriginal = async function(cupomId) {
             const u = esc(it.unidade || 'un');
             const vu = it.valor_unitario != null ? reais(it.valor_unitario) : '—';
             const vt = it.valor_total != null ? reais(it.valor_total) : '—';
-            return `<tr><td class="td-corta" title="${esc(it.nome)}">${esc(it.nome)}</td><td>${q.toLocaleString('pt-BR')} ${u}</td><td class="td-valor">${vu}</td><td class="td-valor">${vt}</td></tr>`;
+            const nome = it.nome_canonico || it.nome || '';
+            return `<tr><td class="td-corta" title="${esc(nome)}">${esc(nome)}</td><td>${q.toLocaleString('pt-BR')} ${u}</td><td class="td-valor">${vu}</td><td class="td-valor">${vt}</td></tr>`;
           }).join('') + `</tbody></table></div>`;
       } else {
         elItens.textContent = entrada.resumo_itens || 'Nenhum item discriminado.';
