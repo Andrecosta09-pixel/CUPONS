@@ -88,6 +88,11 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
   font-family: var(--e-font);
   font-size: 14px;
@@ -533,7 +538,7 @@ body {
 .dash-bar-acoes { display: inline-flex; gap: 8px; margin-left: auto; align-items: center; }
 
 /* Barras clicáveis (estabelecimentos, itens, dias do gráfico) */
-.hbar-btn { display: block; width: 100%; text-align: left; padding: 8px 10px; margin: -4px -10px; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; font: inherit; color: inherit; transition: background .15s var(--e-ease), border-color .15s var(--e-ease); }
+.hbar-btn { display: block; width: 100%; text-align: left; padding: 8px; margin: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; cursor: pointer; font: inherit; color: inherit; transition: background .15s var(--e-ease), border-color .15s var(--e-ease); }
 .hbar-btn:hover { background: var(--c-surface-2); border-color: var(--c-border); }
 .hbar-btn:focus-visible { outline: 2px solid var(--c-primary); outline-offset: 1px; }
 .hbar-btn__sub { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--c-text-2); margin-top: 4px; }
@@ -586,10 +591,13 @@ body {
   .dash-bar-acoes { width: 100%; margin-left: 0; }
   .dash-bar-acoes .btn { flex: 1; min-height: 44px; }
   .dr-resumo-grid { grid-template-columns: 1fr; }
-  .seg { width: 100%; } .seg__opt { flex: 1; height: 44px; }
+  .seg { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .seg::-webkit-scrollbar { display: none; }
+  .seg__opt { flex: 1 0 auto; min-width: 0; height: 40px; padding: 0 8px; font-size: 12px; }
   .link-acao { min-height: 44px; }
   .chart { height: 200px; }
   .kpi-grid, .kpi-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .kpi-grid--3 > :first-child { grid-column: 1 / -1; }
 }
 
 

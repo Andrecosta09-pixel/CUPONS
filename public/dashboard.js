@@ -25,7 +25,7 @@
     { id: '30', rotulo: '30 dias', dias: 30 },
     { id: '90', rotulo: '90 dias', dias: 90 },
     { id: 'tudo', rotulo: 'Tudo', dias: null },
-    { id: 'custom', rotulo: 'Personalizado', dias: null }
+    { id: 'custom', rotulo: 'Datas', dias: null }
   ];
   const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 

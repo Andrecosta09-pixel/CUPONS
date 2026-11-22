@@ -6,7 +6,7 @@
 /**
  * Nome e versão do cache. Incrementar a versão força atualização.
  */
-const CACHE_NAME = 'cupom-fiscal-v9';
+const CACHE_NAME = 'cupom-fiscal-v10';
 
 /**
  * Arquivos estáticos para cache (shell da aplicação).
